@@ -1,0 +1,449 @@
+<title>Mini Hold'em Solver</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: solver workbench. The betting line runs across the top; the hand grid fills the left; table, range summary and hand detail stack on the right. Card-room neutrals; colour is reserved for actions. */
+:root {
+  --bg: #0f1517; --panel: #161f22; --raised: #1d282c; --line: #28373c; --fg: #e3ebe8; --muted: #8d9e9a; --faint: #55676a;
+  --accent: #e2bd62;
+  --felt: #1d4f44; --felt-2: #12352e; --rail: #0a221e;
+  --card: #eef2f1; --ink: #142024; --suit-red: #c8323a; --on-fill: #ffffff;
+  --bet: #df634d; --raise: #b0304a; --call: #3aa46b; --fold: #4c84c8;
+  --empty: #131b1e; --dead: #0c1214; --shadow: rgba(0, 0, 0, 0.45);
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #e9eeec; --panel: #ffffff; --raised: #f2f5f4; --line: #d0dad7; --fg: #14201d; --muted: #586965; --faint: #9eaca9;
+  --accent: #9a6d12;
+  --felt: #2b6e5e; --felt-2: #1f5548; --rail: #173d34;
+  --card: #ffffff; --ink: #142024; --suit-red: #c22d36; --on-fill: #ffffff;
+  --bet: #d8553f; --raise: #a3263e; --call: #2c9459; --fold: #3c72b6;
+  --empty: #e2e8e6; --dead: #d3dbd8; --shadow: rgba(20, 32, 29, 0.18);
+  color-scheme: light; } }
+:root[data-theme="light"] {
+  --bg: #e9eeec; --panel: #ffffff; --raised: #f2f5f4; --line: #d0dad7; --fg: #14201d; --muted: #586965; --faint: #9eaca9;
+  --accent: #9a6d12;
+  --felt: #2b6e5e; --felt-2: #1f5548; --rail: #173d34;
+  --card: #ffffff; --ink: #142024; --suit-red: #c22d36; --on-fill: #ffffff;
+  --bet: #d8553f; --raise: #a3263e; --call: #2c9459; --fold: #3c72b6;
+  --empty: #e2e8e6; --dead: #d3dbd8; --shadow: rgba(20, 32, 29, 0.18);
+  color-scheme: light; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.45 var(--body); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.app { max-width: 1320px; margin: 0 auto; padding-block: 14px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 14px; }
+.app > * { min-width: 0; }
+button { font: inherit; color: inherit; }
+button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.label { font: 600 13px/1 var(--display); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+/* Top bar */
+.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 22px; }
+.brand { font: 700 24px/1 var(--display); letter-spacing: 0.01em; }
+.spot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--muted); font-size: 14px; }
+.spot .dot { color: var(--faint); }
+.solve { margin-left: auto; font-size: 12px; color: var(--muted); }
+
+/* Card faces */
+.cd { display: inline-grid; place-items: center; background: var(--card); color: var(--ink); border-radius: 5px; font: 700 18px/1 var(--display); box-shadow: 0 1px 2px var(--shadow); }
+.cd .s { font-size: 0.8em; margin-top: -2px; }
+.cd.red { color: var(--suit-red); }
+.cd.lg { width: 46px; height: 64px; font-size: 30px; border-radius: 7px; grid-template-rows: auto auto; align-content: center; gap: 0; }
+.cd.md { width: 30px; height: 42px; font-size: 20px; grid-template-rows: auto auto; align-content: center; }
+.cd.sm { width: 22px; height: 30px; font-size: 15px; grid-template-rows: auto auto; align-content: center; border-radius: 4px; }
+.cd.back { background: repeating-linear-gradient(45deg, var(--raised) 0 4px, var(--line) 4px 8px); border: 1px solid var(--line); }
+.cards { display: inline-flex; gap: 4px; }
+.ct { font: 600 1em/1 var(--mono); white-space: nowrap; }
+.ct .red { color: var(--suit-red); }
+
+/* Betting line */
+.line { display: flex; gap: 10px; align-items: stretch; }
+.line-scroll { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; min-width: 0; flex: 1; }
+.pcard { flex: 0 0 auto; min-width: 118px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 6px 6px; display: grid; align-content: start; gap: 4px; }
+.pcard.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.pcard .ph { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 0 6px; }
+.pcard .ph b { font: 700 14px/1 var(--display); letter-spacing: 0.06em; }
+.pcard .ph span { font: 500 12px/1 var(--display); letter-spacing: 0.08em; color: var(--muted); }
+.pcard ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.pa { display: flex; justify-content: space-between; gap: 10px; width: 100%; text-align: left; background: none; border: 0; border-radius: 3px; padding: 4px 6px; font: 600 14px/1.1 var(--display); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); cursor: pointer; }
+.pa:hover { background: var(--raised); color: var(--fg); }
+.pa.chosen { background: var(--raised); color: var(--fg); box-shadow: inset 3px 0 0 var(--c); }
+.pcard.current .pa { color: var(--fg); }
+.pa.end { cursor: default; color: var(--faint); }
+.pa.end:hover { background: none; }
+.pa .tail { font: 500 11px/1.1 var(--body); letter-spacing: 0; text-transform: none; color: var(--faint); }
+.pcard.flop { min-width: 0; padding-inline: 10px; }
+.line-ctl { display: grid; gap: 6px; align-content: start; }
+.btn { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; font: 600 13px/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; }
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+
+/* Workbench */
+.work { display: grid; grid-template-columns: minmax(0, 720px) minmax(360px, 1fr); gap: 18px; align-items: start; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+.grid-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 12px; }
+.grid-head .who { display: flex; align-items: baseline; gap: 10px; }
+.grid-head .who b { font: 700 18px/1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch { width: 30px; height: 16px; border-radius: 99px; background: var(--line); position: relative; transition: background .15s; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--fg); transition: transform .15s; }
+.toggle input:checked + .switch { background: var(--accent); }
+.toggle input:checked + .switch::after { transform: translateX(14px); background: var(--bg); }
+
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
+.cell { position: relative; aspect-ratio: 1; max-width: 100%; border: 0; border-radius: 3px; background: var(--empty); overflow: hidden; padding: 0; cursor: pointer; text-align: left; }
+.cell .fill { position: absolute; left: 0; right: 0; bottom: 0; display: flex; transition: height .2s; }
+.cell .fill i { height: 100%; transition: flex-basis .2s; }
+.cell .lab { position: absolute; top: 8px; left: 9px; font: 700 clamp(16px, 2.6vw, 26px)/1 var(--display); color: var(--on-fill); text-shadow: 0 1px 2px rgba(0,0,0,.45); }
+.cell .sub { position: absolute; left: 9px; bottom: 8px; right: 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: clamp(11px, 1.3vw, 13px); color: var(--on-fill); text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.cell .sub .ct .red { color: inherit; }
+.cell.out .lab, .cell.out .sub { color: var(--faint); text-shadow: none; }
+.cell.dead { background: var(--dead); cursor: default; background-image: repeating-linear-gradient(135deg, transparent 0 7px, var(--empty) 7px 8px); }
+.cell.dead .lab { color: var(--faint); text-shadow: none; }
+.cell.dead .sub { color: var(--faint); text-shadow: none; }
+.cell.sel { outline: 3px solid var(--accent); outline-offset: -3px; }
+.grid-note { margin: 12px 0 0; max-width: 72ch; font-size: 13px; color: var(--muted); }
+
+/* Table */
+.side { display: grid; gap: 14px; max-width: 560px; }
+.table { position: relative; }
+.felt { position: relative; aspect-ratio: 1.8 / 1; max-width: 100%; margin-block: 26px; border-radius: 999px; background: radial-gradient(ellipse at 50% 42%, var(--felt), var(--felt-2) 72%); border: 9px solid var(--rail); box-shadow: 0 10px 24px var(--shadow); display: grid; place-items: center; }
+.center { display: grid; justify-items: center; gap: 6px; }
+.pot { font: 600 14px/1 var(--display); letter-spacing: 0.1em; color: #e9f2ee; text-transform: uppercase; }
+.pot b { font-size: 18px; }
+.seat { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; z-index: 1; }
+.seat.top { top: 0; }
+.seat.bottom { bottom: 0; }
+.badge { display: grid; justify-items: center; min-width: 78px; padding: 6px 12px; background: var(--panel); border: 2px solid var(--line); border-radius: 999px; }
+.badge b { font: 700 16px/1 var(--display); letter-spacing: 0.05em; }
+.badge span { font: 500 11px/1.2 var(--display); letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; }
+.seat.acting .badge { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.dealer { width: 20px; height: 20px; border-radius: 50%; background: var(--card); color: var(--ink); font: 700 12px/20px var(--display); text-align: center; }
+.status { text-align: center; font-size: 14px; color: var(--muted); margin-top: -6px; }
+.status b { color: var(--fg); font-weight: 600; }
+
+/* Range summary */
+.sum-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.sum-labels { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 8px; font: 600 14px/1.2 var(--display); letter-spacing: 0.05em; text-transform: uppercase; }
+.sum-labels span { color: var(--c); }
+.sum-labels b { color: var(--fg); font: 600 13px var(--mono); margin-left: 4px; }
+.bar { display: flex; height: 12px; border-radius: 3px; overflow: hidden; background: var(--empty); }
+.bar i { height: 100%; }
+
+/* Hand detail */
+.det-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.det-name { display: grid; gap: 3px; }
+.det-name b { font: 700 22px/1 var(--display); letter-spacing: 0.03em; }
+.det-name span { font-size: 13px; color: var(--muted); }
+.det-reach { font-size: 13px; color: var(--muted); margin: 8px 0 10px; }
+.rows { display: grid; gap: 6px; }
+.row { display: grid; grid-template-columns: 82px minmax(0, 1fr) 58px; align-items: center; gap: 10px; }
+.row .an { font: 600 14px/1 var(--display); letter-spacing: 0.05em; text-transform: uppercase; color: var(--c); }
+.row .track { height: 22px; background: var(--empty); border-radius: 3px; overflow: hidden; }
+.row .track i { display: block; height: 100%; background: var(--c); transition: width .2s; }
+.row .pct { text-align: right; font-size: 14px; }
+.det-empty { font-size: 14px; color: var(--muted); margin: 6px 0 0; max-width: 46ch; }
+
+.foot { font-size: 12px; color: var(--muted); display: grid; gap: 4px; }
+.foot code { font-family: var(--mono); font-size: 11px; display: block; overflow-x: auto; white-space: nowrap; padding-bottom: 2px; }
+
+@media (max-width: 920px) {
+  .work { grid-template-columns: minmax(0, 1fr); }
+  .side { order: -1; }
+  .solve { margin-left: 0; }
+}
+@media (max-width: 520px) {
+  .line { flex-direction: column; }
+  .line-ctl { grid-auto-flow: column; justify-content: start; }
+  .cell .lab { top: 6px; left: 6px; }
+  .cell .sub { left: 6px; bottom: 5px; }
+  .cell .sub .pc { display: none; }
+  .cd.lg { width: 38px; height: 54px; font-size: 25px; }
+  .badge { min-width: 64px; padding: 5px 10px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">Mini Hold'em Solver</div>
+    <div class="spot" id="spot"></div>
+    <div class="solve mono" id="solve"></div>
+  </header>
+
+  <nav class="line" aria-label="Betting line">
+    <div class="line-scroll" id="line"></div>
+    <div class="line-ctl">
+      <button class="btn" id="back" type="button">Back</button>
+      <button class="btn" id="reset" type="button">Reset</button>
+    </div>
+  </nav>
+
+  <main class="work">
+    <section class="panel">
+      <div class="grid-head">
+        <div class="who"><b id="grid-who"></b><span class="label" id="grid-count"></span></div>
+        <label class="toggle" for="scale"><input type="checkbox" id="scale" checked><span class="switch"></span>Bar height shows range</label>
+      </div>
+      <div class="grid" id="grid"></div>
+      <p class="grid-note">Each cell is one two-card hand: suited above the diagonal, offsuit below, pairs on it. Colours show how often the solver takes each action with that hand. With "bar height shows range" on, the filled height is how often the player still holds that hand at this point. Hatched cells can't be dealt on this board.</p>
+    </section>
+
+    <aside class="side">
+      <div class="table">
+        <div class="felt" id="felt"></div>
+      </div>
+      <div class="status" id="status"></div>
+      <section class="panel" aria-label="Range strategy">
+        <div class="sum-head"><span class="label" id="sum-who"></span><span class="mono label" id="sum-count"></span></div>
+        <div class="sum-labels" id="sum-labels"></div>
+        <div class="bar" id="sum-bar"></div>
+      </section>
+      <section class="panel" aria-label="Selected hand" id="detail"></section>
+    </aside>
+  </main>
+
+  <footer class="foot" id="foot"></footer>
+</div>
+
+<script>
+const D = /*DATA*/null;
+
+const RANKS = ['5', '4', '3', '2'];
+const SUIT = { c: '♣', d: '♦', h: '♥', s: '♠' };
+const RED = { d: true, h: true };
+const LETTER = { fold: 'f', check: 'c', call: 'c', bet: 'r', raise: 'r' };
+const COLOR = { bet: 'var(--bet)', raise: 'var(--raise)', check: 'var(--call)', call: 'var(--call)', fold: 'var(--fold)' };
+const AGGRESSION = { raise: 0, bet: 0, call: 1, check: 1, fold: 2 };
+const SEAT = ['P1', 'P2'];
+const POS = ['OOP', 'IP'];
+const POS_LONG = ['out of position', 'in position'];
+
+const state = { path: [], sel: '5d3d', hover: null, scale: true };
+
+const HANDS = Object.keys(D.nodes[''].hands);
+const handClass = h => {
+  const [a, b] = [h.slice(0, 2), h.slice(2)].sort((x, y) => RANKS.indexOf(x[0]) - RANKS.indexOf(y[0]));
+  return a[0] === b[0] ? a[0] + b[0] : a[0] + b[0] + (a[1] === b[1] ? 's' : 'o');
+};
+const BY_CLASS = Object.fromEntries(HANDS.map(h => [handClass(h), h]));
+
+const cardText = c => `${c[0]}<span class="${RED[c[1]] ? 'red' : ''}">${SUIT[c[1]]}</span>`;
+const handText = h => `<span class="ct">${cardText(h.slice(0, 2))}${cardText(h.slice(2))}</span>`;
+const cardFace = (c, size) => `<span class="cd ${size} ${RED[c[1]] ? 'red' : ''}"><span>${c[0]}</span><span class="s">${SUIT[c[1]]}</span></span>`;
+const pct = x => (100 * x).toFixed(1) + '%';
+
+const seqOf = path => path.map(a => LETTER[a]).join('');
+const nodeAt = path => D.nodes[seqOf(path)];
+const byAggression = acts => [...acts].sort((a, b) => AGGRESSION[a] - AGGRESSION[b]);
+
+// Street amounts: both blinds act like antes, so a bet is 2 and a raise makes it 4.
+function actionLabel(node, a) {
+  const p = node.player, c = node.contrib, opp = c[1 - p];
+  if (a === 'bet' || a === 'raise') return `${a} ${opp - 1 + 2}`;
+  if (a === 'call') return `call ${opp - c[p]}`;
+  return a;
+}
+
+function outcome(node, a) {
+  const p = node.player, c = node.contrib, pot = c[0] + c[1];
+  if (a === 'fold') return `${SEAT[p]} folds; ${SEAT[1 - p]} takes the pot of ${pot}`;
+  const each = Math.max(c[0], c[1]);
+  return `showdown for a pot of ${2 * each}`;
+}
+
+const isTerminal = (path, a) => !D.nodes[seqOf(path) + LETTER[a]];
+
+// How often `actor` still holds hand h after the actions in `path` (their own choices only).
+function reach(h, actor, path) {
+  let r = 1;
+  for (let i = 0; i < path.length; i++) {
+    const n = nodeAt(path.slice(0, i));
+    if (n.player === actor) r *= n.hands[h][path[i]];
+  }
+  return r;
+}
+
+function whyOut(h, actor, path) {
+  for (let i = 0; i < path.length; i++) {
+    const n = nodeAt(path.slice(0, i));
+    if (n.player === actor && n.hands[h][path[i]] === 0) {
+      return `Out of range: ${SEAT[actor]} never holds ${handText(h)} here, because earlier in this line ${SEAT[actor]} never chooses <b>${actionLabel(n, path[i]).toUpperCase()}</b> with it.`;
+    }
+  }
+  return '';
+}
+
+function renderSpot() {
+  document.getElementById('spot').innerHTML =
+    `<span>8-card deck</span><span class="dot">·</span><span>Flop</span><span class="ct">${D.board.map(cardText).join(' ')}</span>` +
+    `<span class="dot">·</span><span>Limit, bet 2, one raise</span>`;
+  document.getElementById('solve').textContent =
+    `CFR+ · ${D.iterations.toLocaleString('en')} iterations · exploitability ${D.exploitability.toFixed(6)} chips/hand`;
+  document.getElementById('foot').innerHTML =
+    `<span>Strategies are the CFR+ average policy from OpenSpiel. Hands that never reach a decision are shown as out of range: the solver's numbers there are placeholders with no effect on play.</span>` +
+    `<code>${D.load}</code>`;
+}
+
+function renderLine() {
+  const el = document.getElementById('line');
+  let html = `<div class="pcard flop"><div class="ph"><b>FLOP</b></div><div class="cards">${D.board.map(c => cardFace(c, 'sm')).join('')}</div></div>`;
+  for (let i = 0; i <= state.path.length; i++) {
+    const prefix = state.path.slice(0, i);
+    const n = nodeAt(prefix);
+    const current = i === state.path.length;
+    const items = n.actions.map(a => {
+      const chosen = !current && state.path[i] === a;
+      const end = isTerminal(prefix, a);
+      const tail = end ? `<span class="tail">ends</span>` : '';
+      const title = end ? ` title="Ends the hand: ${outcome(n, a)}"` : '';
+      return `<li><button type="button" class="pa${chosen ? ' chosen' : ''}${end ? ' end' : ''}" style="--c:${COLOR[a]}" data-depth="${i}" data-action="${a}"${end ? ' aria-disabled="true"' : ''}${title}>${actionLabel(n, a)}${tail}</button></li>`;
+    }).join('');
+    html += `<div class="pcard${current ? ' current' : ''}"><div class="ph"><b>${SEAT[n.player]}</b><span>${POS[n.player]}</span></div><ul>${items}</ul></div>`;
+  }
+  el.innerHTML = html;
+  const cur = el.querySelector('.pcard.current');
+  if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  document.getElementById('back').disabled = state.path.length === 0;
+  document.getElementById('reset').disabled = state.path.length === 0;
+}
+
+function renderGrid(node, reaches) {
+  const actor = node.player;
+  const acts = byAggression(node.actions);
+  let html = '';
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      const cls = i === j ? RANKS[i] + RANKS[i] : i < j ? RANKS[i] + RANKS[j] + 's' : RANKS[j] + RANKS[i] + 'o';
+      const h = BY_CLASS[cls];
+      if (!h) {
+        html += `<div class="cell dead" title="${cls} can't be dealt on this board"><span class="lab">${cls}</span><span class="sub"><span>blocked</span></span></div>`;
+        continue;
+      }
+      const r = reaches[h];
+      const probs = node.hands[h];
+      const top = acts.reduce((m, a) => (probs[a] > probs[m] ? a : m), acts[0]);
+      const height = r > 0 ? (state.scale ? 100 * r : 100) : 0;
+      const segs = r > 0 ? acts.map(a => `<i style="flex-basis:${100 * probs[a]}%;background:${COLOR[a]}"></i>`).join('') : '';
+      const label = r > 0 ? `${cls}, ${acts.map(a => `${actionLabel(node, a)} ${pct(probs[a])}`).join(', ')}` : `${cls}, not in range`;
+      html += `<button type="button" class="cell${r > 0 ? '' : ' out'}${state.sel === h ? ' sel' : ''}" data-hand="${h}" aria-label="${label}" aria-pressed="${state.sel === h}">` +
+        `<span class="fill" style="height:${height}%">${segs}</span>` +
+        `<span class="lab">${cls}</span>` +
+        `<span class="sub">${handText(h)}<span class="pc mono">${r > 0 ? Math.round(100 * probs[top]) + '% ' + top : 'out'}</span></span></button>`;
+    }
+  }
+  document.getElementById('grid').innerHTML = html;
+}
+
+function renderTable(node, shown) {
+  const p = node.player;
+  const seat = s => {
+    const hand = s === p
+      ? `<span class="cards">${cardFace(shown.slice(0, 2), 'md')}${cardFace(shown.slice(2), 'md')}</span>`
+      : `<span class="cards"><span class="cd md back"></span><span class="cd md back"></span></span>`;
+    const badge = `<span class="badge"><b>${SEAT[s]}</b><span>${POS[s]} · in ${node.contrib[s]}</span></span>`;
+    const dealer = s === 1 ? `<span class="dealer" title="Dealer button: P2 acts last">D</span>` : '';
+    return `<div class="seat ${s === 1 ? 'top' : 'bottom'}${s === p ? ' acting' : ''}">${badge}${hand}${dealer}</div>`;
+  };
+  const pot = node.contrib[0] + node.contrib[1];
+  document.getElementById('felt').innerHTML =
+    seat(1) +
+    `<div class="center"><div class="pot">Pot <b class="mono">${pot}</b></div><div class="cards">${D.board.map(c => cardFace(c, 'lg')).join('')}</div></div>` +
+    seat(0);
+  const toCall = node.contrib[1 - p] - node.contrib[p];
+  const raised = state.path.filter(a => a === 'bet' || a === 'raise').length > 1;
+  document.getElementById('status').innerHTML = toCall > 0
+    ? `<b>${SEAT[p]} to act</b>, facing ${raised ? 'a raise' : 'a bet'}: ${toCall} to call`
+    : `<b>${SEAT[p]} to act</b> ${state.path.length ? 'after a check' : 'first'}`;
+}
+
+function renderSummary(node, reaches) {
+  const actor = node.player;
+  const acts = byAggression(node.actions);
+  const total = HANDS.reduce((s, h) => s + reaches[h], 0);
+  const freq = Object.fromEntries(acts.map(a => [a, HANDS.reduce((s, h) => s + reaches[h] * node.hands[h][a], 0) / total]));
+  document.getElementById('sum-who').textContent = `${SEAT[actor]}'s whole range here`;
+  document.getElementById('sum-count').textContent = `${total.toFixed(2)} of ${HANDS.length} hands`;
+  document.getElementById('sum-labels').innerHTML = acts.map(a => `<span style="--c:${COLOR[a]}">${actionLabel(node, a)}<b>${pct(freq[a])}</b></span>`).join('');
+  document.getElementById('sum-bar').innerHTML = acts.map(a => `<i style="flex-basis:${100 * freq[a]}%;background:${COLOR[a]}"></i>`).join('');
+}
+
+function renderDetail(node, reaches, shown) {
+  const actor = node.player;
+  const r = reaches[shown];
+  const acts = byAggression(node.actions);
+  let body;
+  if (r > 0) {
+    body = `<div class="det-reach">${r === 1 ? `Always in ${SEAT[actor]}'s range here.` : `In ${SEAT[actor]}'s range ${pct(r)} of the time: ${SEAT[actor]} mixes earlier in the line with this hand.`}</div>` +
+      `<div class="rows">${acts.map(a => `<div class="row" style="--c:${COLOR[a]}"><span class="an">${actionLabel(node, a)}</span><span class="track"><i style="width:${100 * node.hands[shown][a]}%"></i></span><span class="pct mono">${pct(node.hands[shown][a])}</span></div>`).join('')}</div>`;
+  } else {
+    body = `<p class="det-empty">${whyOut(shown, actor, state.path)}</p>`;
+  }
+  document.getElementById('detail').innerHTML =
+    `<div class="det-head"><span class="cards">${cardFace(shown.slice(0, 2), 'md')}${cardFace(shown.slice(2), 'md')}</span>` +
+    `<span class="det-name"><b>${handClass(shown)}</b><span>${D.made[shown]}</span></span></div>` + body;
+}
+
+function render() {
+  const node = nodeAt(state.path);
+  const reaches = Object.fromEntries(HANDS.map(h => [h, reach(h, node.player, state.path)]));
+  const shown = state.hover || state.sel;
+  document.getElementById('grid-who').textContent = `${SEAT[node.player]} · ${POS_LONG[node.player]}`;
+  document.getElementById('grid-count').textContent = `Pot ${node.contrib[0] + node.contrib[1]}`;
+  renderLine();
+  renderGrid(node, reaches);
+  renderTable(node, shown);
+  renderSummary(node, reaches);
+  renderDetail(node, reaches, shown);
+}
+
+function go(path) { state.path = path; state.hover = null; render(); }
+
+document.getElementById('line').addEventListener('click', e => {
+  const b = e.target.closest('.pa');
+  if (!b || b.classList.contains('end')) return;
+  const depth = +b.dataset.depth;
+  go([...state.path.slice(0, depth), b.dataset.action]);
+});
+document.getElementById('back').addEventListener('click', () => go(state.path.slice(0, -1)));
+document.getElementById('reset').addEventListener('click', () => go([]));
+document.getElementById('scale').addEventListener('change', e => { state.scale = e.target.checked; render(); });
+
+const grid = document.getElementById('grid');
+grid.addEventListener('click', e => {
+  const c = e.target.closest('.cell[data-hand]');
+  if (!c) return;
+  state.sel = c.dataset.hand; state.hover = null; render();
+});
+grid.addEventListener('pointerover', e => {
+  if (e.pointerType !== 'mouse') return;
+  const c = e.target.closest('.cell[data-hand]');
+  const h = c ? c.dataset.hand : null;
+  if (h && h !== state.hover) { state.hover = h; renderHover(); }
+});
+grid.addEventListener('pointerleave', () => { if (state.hover) { state.hover = null; renderHover(); } });
+
+function renderHover() {
+  const node = nodeAt(state.path);
+  const reaches = Object.fromEntries(HANDS.map(h => [h, reach(h, node.player, state.path)]));
+  const shown = state.hover || state.sel;
+  renderTable(node, shown);
+  renderDetail(node, reaches, shown);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea')) return;
+  if ((e.key === 'Backspace' || e.key === 'ArrowLeft') && state.path.length) { e.preventDefault(); go(state.path.slice(0, -1)); }
+});
+
+renderSpot();
+render();
+</script>
