@@ -1,7 +1,7 @@
 """Build the strategy viewer from the games' data in build/.
 
-    build/mini.json, build/c1.json   from scripts/solve_reference.py (OpenSpiel CFR+)
-    build/holdem.json                from viewer/mock_holdem.py (mock data, not a solve)
+    build/mini.engine.json, build/c1.engine.json   from engine/limit_cfr.py (our vector CFR+)
+    build/holdem.json                              from viewer/mock_holdem.py (mock data, not a solve)
 
 Every game is turned into one shape: a tree of decision nodes, each with its actions and, per
 action, the probability for every combo. Writes build/viewer.html (open it in a browser) and
@@ -14,9 +14,10 @@ import re
 import sys
 from pathlib import Path
 
-from cards import RANKS, describe
-
 root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(root))
+from engine.cards import RANKS, describe  # noqa: E402
+
 LETTER = {"fold": "f", "check": "c", "call": "c", "bet": "r", "raise": "r"}
 PLAIN_SEATS = [
     {"name": "P1", "pos": "OOP", "long": "out of position"},
@@ -32,8 +33,8 @@ def load(key: str, how: str) -> dict:
 
 
 def solved_game(key: str, switch: str, deck: str, default_cell: str) -> dict:
-    """A one-street limit game solved by scripts/solve_reference.py, nodes keyed by betting sequence."""
-    s = load(key, f"uv run python scripts/solve_reference.py {key}")
+    """A one-street limit game solved by engine/limit_cfr.py, nodes keyed by betting sequence."""
+    s = load(f"{key}.engine", f"uv run python engine/limit_cfr.py {key}")
     board_cards = re.search(r"boardCards=(\w+)", s["load"]).group(1)
     board = [board_cards[i : i + 2] for i in range(0, len(board_cards), 2)]
     num_ranks = int(re.search(r"numRanks=(\d+)", s["load"]).group(1))
@@ -65,8 +66,8 @@ def solved_game(key: str, switch: str, deck: str, default_cell: str) -> dict:
         "switch": switch,
         "deck": deck,
         "rules": "Limit, bet 2, one raise",
-        "source": f"CFR+ · {s['iterations']:,} iterations · exploitability {s['exploitability']:.6f} chips/hand",
-        "note": "Strategies are the CFR+ average policy from OpenSpiel. Combos that never reach a decision are shown as out of range: the solver's numbers there are placeholders with no effect on play.",
+        "source": f"Our engine · vector CFR+ · {s['iterations']:,} iterations in {s['seconds']:.1f} s · exploitability {s['exploitability']:.6f} chips/hand",
+        "note": "Strategies are the average policy of this repo's vector CFR+ engine (engine/limit_cfr.py). Its tests check it against OpenSpiel's CFR+ on the same game: identical iterates and the same exploitability. Combos that never reach a decision are shown as out of range: the solver's numbers there are placeholders with no effect on play.",
         "code": s["load"],
         "mock": False,
         "board": board,

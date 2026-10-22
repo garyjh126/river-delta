@@ -15,9 +15,11 @@ import hashlib
 import itertools
 import json
 import math
+import sys
 from pathlib import Path
 
-from cards import RANKS, SUITS, draws, value
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from engine.cards import RANKS, SUITS, draws, value  # noqa: E402
 
 BOARD = ["Ks", "9h", "5h"]
 POT, STACK = 5.5, 97.5
