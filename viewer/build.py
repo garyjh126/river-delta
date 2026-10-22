@@ -1,66 +1,118 @@
-"""Build the strategy viewer from build/mini.json and build/c1.json (written by scripts/solve_reference.py).
+"""Build the strategy viewer from the games' data in build/.
 
-Writes build/viewer.html (open it in a browser) and build/viewer.artifact.html (the same page
-without the document wrapper, for publishing as a claude.ai artifact).
+    build/mini.json, build/c1.json   from scripts/solve_reference.py (OpenSpiel CFR+)
+    build/holdem.json                from viewer/mock_holdem.py (mock data, not a solve)
+
+Every game is turned into one shape: a tree of decision nodes, each with its actions and, per
+action, the probability for every combo. Writes build/viewer.html (open it in a browser) and
+build/viewer.artifact.html (the same page without the document wrapper, for publishing as a
+claude.ai artifact).
 """
 
 import json
 import re
 import sys
-from collections import Counter
 from pathlib import Path
 
+from cards import RANKS, describe
+
 root = Path(__file__).resolve().parent.parent
-DECKS = {"mini": "8-card deck", "c1": "24-card deck"}
+LETTER = {"fold": "f", "check": "c", "call": "c", "bet": "r", "raise": "r"}
+PLAIN_SEATS = [
+    {"name": "P1", "pos": "OOP", "long": "out of position"},
+    {"name": "P2", "pos": "IP", "long": "in position"},
+]
 
 
-def made(hand: str, board: list[str]) -> str:
-    """The five-card hand (board plus hole cards) by the usual ranking. These decks have no ace."""
-    cards = board + [hand[:2], hand[2:]]
-    ranks = sorted((int(c[0]) for c in cards), reverse=True)
-    groups = sorted(Counter(ranks).items(), key=lambda kv: (-kv[1], -kv[0]))
-    straight = len(set(ranks)) == 5 and ranks[0] - ranks[-1] == 4
-    flush = len({c[1] for c in cards}) == 1
-    if straight and flush:
-        return f"straight flush, {ranks[0]} high"
-    if groups[0][1] == 4:
-        return f"four {groups[0][0]}s"
-    if groups[0][1] == 3 and groups[1][1] == 2:
-        return f"full house, {groups[0][0]}s full of {groups[1][0]}s"
-    if flush:
-        return f"flush, {ranks[0]} high"
-    if straight:
-        return f"straight, {ranks[0]} high"
-    if groups[0][1] == 3:
-        return f"three {groups[0][0]}s"
-    if groups[0][1] == 2 and groups[1][1] == 2:
-        return f"two pair, {groups[0][0]}s and {groups[1][0]}s"
-    if groups[0][1] == 2:
-        return f"pair of {groups[0][0]}s"
-    return f"{ranks[0]} high"
-
-
-def game(key: str) -> dict:
+def load(key: str, how: str) -> dict:
     path = root / "build" / f"{key}.json"
     if not path.exists():
-        sys.exit(f"{path} is missing: run `uv run python scripts/solve_reference.py {key}` first")
-    solved = json.loads(path.read_text())
-    board_cards = re.search(r"boardCards=(\w+)", solved["load"]).group(1)
+        sys.exit(f"{path} is missing: run `{how}` first")
+    return json.loads(path.read_text())
+
+
+def solved_game(key: str, switch: str, deck: str, default_cell: str) -> dict:
+    """A one-street limit game solved by scripts/solve_reference.py, nodes keyed by betting sequence."""
+    s = load(key, f"uv run python scripts/solve_reference.py {key}")
+    board_cards = re.search(r"boardCards=(\w+)", s["load"]).group(1)
     board = [board_cards[i : i + 2] for i in range(0, len(board_cards), 2)]
-    num_ranks = int(re.search(r"numRanks=(\d+)", solved["load"]).group(1))
+    num_ranks = int(re.search(r"numRanks=(\d+)", s["load"]).group(1))
+    hands = list(s["nodes"][""]["hands"])
+    nodes = {}
+    for seq, n in s["nodes"].items():
+        p, c = n["player"], n["contrib"]
+        opp, pot = c[1 - p], c[0] + c[1]
+        actions = []
+        for a in n["actions"]:
+            # Street amounts: both blinds act like antes, so a bet is 2 and a raise makes it 4.
+            label = f"{a} {opp + 1}" if a in ("bet", "raise") else f"call {opp - c[p]}" if a == "call" else a
+            child = seq + LETTER[a]
+            if child in s["nodes"]:
+                actions.append({"kind": a, "label": label, "size": opp + 2 if a in ("bet", "raise") else 0, "next": child, "end": None})
+            else:
+                text = (f"{PLAIN_SEATS[p]['name']} folds; {PLAIN_SEATS[1 - p]['name']} takes the pot of {pot}" if a == "fold"
+                        else f"Showdown for a pot of {2 * max(c)}")
+                actions.append({"kind": a, "label": label, "size": 0, "next": None, "end": text})
+        nodes[seq or "root"] = {
+            "player": p,
+            "pot": pot,
+            "toCall": opp - c[p],
+            "badge": [f"in {c[0]}", f"in {c[1]}"],
+            "actions": actions,
+            "probs": [[n["hands"][h][a] for h in hands] for a in n["actions"]],
+        }
     return {
-        "deck": DECKS[key],
-        "load": solved["load"],
-        "iterations": solved["iterations"],
-        "exploitability": solved["exploitability"],
+        "switch": switch,
+        "deck": deck,
+        "rules": "Limit, bet 2, one raise",
+        "source": f"CFR+ · {s['iterations']:,} iterations · exploitability {s['exploitability']:.6f} chips/hand",
+        "note": "Strategies are the CFR+ average policy from OpenSpiel. Combos that never reach a decision are shown as out of range: the solver's numbers there are placeholders with no effect on play.",
+        "code": s["load"],
+        "mock": False,
         "board": board,
-        "ranks": [str(r) for r in range(num_ranks + 1, 1, -1)],
-        "nodes": solved["nodes"],
-        "made": {h: made(h, board) for h in solved["nodes"][""]["hands"]},
+        "ranks": list(RANKS[:num_ranks][::-1]),
+        "seats": PLAIN_SEATS,
+        "defaultCell": default_cell,
+        "hands": hands,
+        "made": [describe(board + [h[:2], h[2:]]) for h in hands],
+        "range0": None,
+        "root": "root",
+        "nodes": nodes,
     }
 
 
-data = {"games": {key: game(key) for key in DECKS}}
+def mock_game() -> dict:
+    m = load("holdem", "uv run python viewer/mock_holdem.py")
+    board = m["board"]
+    return {
+        "switch": "Hold'em · 52 cards",
+        "deck": "52-card deck",
+        "rules": "BTN vs BB · single-raised pot · 100 bb",
+        "source": None,
+        "note": "Mock data, made by viewer/mock_holdem.py from a hand-strength heuristic with seeded jitter. No solver produced these numbers: they are here to judge the layout at full size. Starting ranges are mock too.",
+        "code": None,
+        "mock": True,
+        "board": board,
+        "ranks": list(RANKS[::-1]),
+        "seats": [
+            {"name": "BB", "pos": "OOP", "long": "big blind, out of position"},
+            {"name": "BTN", "pos": "IP", "long": "button, in position"},
+        ],
+        "defaultCell": "KQs",
+        "hands": m["hands"],
+        "made": [describe(board + [h[:2], h[2:]], with_draws=True) for h in m["hands"]],
+        "range0": m["range0"],
+        "root": m["root"],
+        "nodes": m["nodes"],
+    }
+
+
+games = {
+    "mini": solved_game("mini", "Mini · 8 cards", "8-card deck", "53s"),
+    "c1": solved_game("c1", "C1 · 24 cards", "24-card deck", "43s"),
+    "holdem": mock_game(),
+}
+data = {"order": list(games), "games": games}
 page = (root / "viewer" / "template.html").read_text().replace("/*DATA*/null", json.dumps(data, separators=(",", ":")))
 (root / "build" / "viewer.artifact.html").write_text(page)
 (root / "build" / "viewer.html").write_text(
@@ -68,6 +120,6 @@ page = (root / "viewer" / "template.html").read_text().replace("/*DATA*/null", j
     '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
     f"</head><body style=\"margin:0\">{page}</body></html>"
 )
-for key, g in data["games"].items():
-    print(f"{key}: {g['iterations']} iterations, exploitability {g['exploitability']:.3g}", file=sys.stderr)
-print(root / "build" / "viewer.html", file=sys.stderr)
+for key, g in games.items():
+    print(f"{key}: {len(g['hands'])} combos, {len(g['nodes'])} decision nodes, {g['source'] or 'mock'}", file=sys.stderr)
+print(f"{root / 'build' / 'viewer.html'} ({len(page) / 1e6:.2f} MB)", file=sys.stderr)

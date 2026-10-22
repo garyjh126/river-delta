@@ -10,7 +10,7 @@
   --accent: #e2bd62;
   --felt: #1d4f44; --felt-2: #12352e; --rail: #0a221e;
   --card: #eef2f1; --ink: #142024; --suit-red: #c8323a; --on-fill: #ffffff;
-  --bet: #df634d; --raise: #b0304a; --call: #3aa46b; --fold: #4c84c8;
+  --bet: #df634d; --raise: #b0304a; --allin: #8f2552; --call: #3aa46b; --fold: #4c84c8;
   --empty: #131b1e; --dead: #0c1214; --shadow: rgba(0, 0, 0, 0.45);
   --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
   --body: "Barlow", "Segoe UI", system-ui, sans-serif;
@@ -22,7 +22,7 @@
   --accent: #9a6d12;
   --felt: #2b6e5e; --felt-2: #1f5548; --rail: #173d34;
   --card: #ffffff; --ink: #142024; --suit-red: #c22d36; --on-fill: #ffffff;
-  --bet: #d8553f; --raise: #a3263e; --call: #2c9459; --fold: #3c72b6;
+  --bet: #d8553f; --raise: #a3263e; --allin: #7d1a43; --call: #2c9459; --fold: #3c72b6;
   --empty: #e2e8e6; --dead: #d3dbd8; --shadow: rgba(20, 32, 29, 0.18);
   color-scheme: light; } }
 :root[data-theme="light"] {
@@ -30,7 +30,7 @@
   --accent: #9a6d12;
   --felt: #2b6e5e; --felt-2: #1f5548; --rail: #173d34;
   --card: #ffffff; --ink: #142024; --suit-red: #c22d36; --on-fill: #ffffff;
-  --bet: #d8553f; --raise: #a3263e; --call: #2c9459; --fold: #3c72b6;
+  --bet: #d8553f; --raise: #a3263e; --allin: #7d1a43; --call: #2c9459; --fold: #3c72b6;
   --empty: #e2e8e6; --dead: #d3dbd8; --shadow: rgba(20, 32, 29, 0.18);
   color-scheme: light; }
 
@@ -110,6 +110,7 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
 .cell .sub { position: absolute; left: 9px; bottom: 8px; right: 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: clamp(11px, 1.3vw, 13px); color: var(--on-fill); text-shadow: 0 1px 2px rgba(0,0,0,.5); }
 .cell .sub .ct .red { color: inherit; }
 .cell.out .lab, .cell.out .sub { color: var(--faint); text-shadow: none; }
+.cell:not(.lab-on):not(.out):not(.dead) .lab, .cell:not(.sub-on):not(.out):not(.dead) .sub { color: var(--fg); text-shadow: none; }
 .cell.dead { background: var(--dead); cursor: default; background-image: repeating-linear-gradient(135deg, transparent 0 7px, var(--empty) 7px 8px); }
 .cell.dead .lab { color: var(--faint); text-shadow: none; }
 .cell.dead .sub { color: var(--faint); text-shadow: none; }
@@ -117,6 +118,12 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
 .grid.dense .cell .lab { top: 6px; left: 7px; font-size: clamp(13px, 1.9vw, 21px); }
 .grid.dense .cell .sub { left: 7px; right: 6px; bottom: 6px; font-size: clamp(10px, 1.05vw, 12px); justify-content: flex-end; white-space: nowrap; }
 .grid.dense .cell .sub > span:first-child { display: none; }
+.grid.xdense { gap: 2px; }
+.grid.xdense .cell { border-radius: 2px; }
+.grid.xdense .cell .lab { top: 3px; left: 4px; font-size: clamp(8px, 1.05vw, 14px); letter-spacing: 0; }
+.grid.xdense .cell .sub { display: none; }
+.grid.xdense .cell.sel { outline-width: 2px; outline-offset: -2px; }
+.pill { display: inline-block; margin-right: 8px; padding: 3px 7px; border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); font: 600 11px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; }
 .grid-note { margin: 12px 0 0; max-width: 72ch; font-size: 13px; color: var(--muted); }
 
 /* Table */
@@ -152,7 +159,7 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
 .det-name span { font-size: 13px; color: var(--muted); }
 .det-reach { font-size: 13px; color: var(--muted); margin: 8px 0 10px; }
 .rows { display: grid; gap: 6px; }
-.row { display: grid; grid-template-columns: 82px minmax(0, 1fr) 58px; align-items: center; gap: 10px; }
+.row { display: grid; grid-template-columns: 100px minmax(0, 1fr) 58px; align-items: center; gap: 10px; }
 .row .an { font: 600 14px/1 var(--display); letter-spacing: 0.05em; text-transform: uppercase; color: var(--c); }
 .row .track { height: 22px; background: var(--empty); border-radius: 3px; overflow: hidden; }
 .row .track i { display: block; height: 100%; background: var(--c); transition: width .2s; }
@@ -192,10 +199,7 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
 <div class="app">
   <header class="top">
     <div class="brand">Mini Hold'em Solver</div>
-    <div class="games" id="games" role="group" aria-label="Game">
-      <button type="button" data-game="mini" aria-pressed="true">Mini · 8 cards</button>
-      <button type="button" data-game="c1" aria-pressed="false">C1 · 24 cards</button>
-    </div>
+    <div class="games" id="games" role="group" aria-label="Game"></div>
     <div class="spot" id="spot"></div>
     <div class="solve mono" id="solve"></div>
   </header>
@@ -215,7 +219,7 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
         <label class="toggle" for="scale"><input type="checkbox" id="scale" checked><span class="switch"></span>Bar height shows range</label>
       </div>
       <div class="grid" id="grid"></div>
-      <p class="grid-note">Each cell holds the two-card combos of one hand: suited above the diagonal, offsuit below, pairs on it. In Mini every cell is a single combo. Colours show how often the solver takes each action, averaged over the cell's combos that are still in range. With "bar height shows range" on, the filled height is the share of the cell's combos the player still holds at this point. Hatched cells can't be dealt on this board.</p>
+      <p class="grid-note">Each cell holds the two-card combos of one hand: suited above the diagonal, offsuit below, pairs on it. Colours show how often each action is taken, averaged over the cell's combos that are still in range; bigger bets are darker. With "bar height shows range" on, the filled height is the share of the cell's combos the player still holds at this point. Hatched cells can't be dealt on this board.</p>
     </section>
 
     <aside class="side">
@@ -240,16 +244,10 @@ const DATA = /*DATA*/null;
 
 const SUIT = { c: '♣', d: '♦', h: '♥', s: '♠' };
 const RED = { d: true, h: true };
-const LETTER = { fold: 'f', check: 'c', call: 'c', bet: 'r', raise: 'r' };
-const COLOR = { bet: 'var(--bet)', raise: 'var(--raise)', check: 'var(--call)', call: 'var(--call)', fold: 'var(--fold)' };
-const AGGRESSION = { raise: 0, bet: 0, call: 1, check: 1, fold: 2 };
-const SEAT = ['P1', 'P2'];
-const POS = ['OOP', 'IP'];
-const POS_LONG = ['out of position', 'in position'];
-const DEFAULT_CELL = { mini: '53s', c1: '43s' };
+const PASSIVE = { check: true, call: true };
 
-let G, HANDS, CELLS;
-const state = { game: 'mini', path: [], sel: null, hover: null, combo: null, scale: true };
+let G, CELLS, ALL;
+const state = { game: null, path: [], sel: null, hover: null, combo: null, scale: true };
 
 const handClass = h => {
   const [a, b] = [h.slice(0, 2), h.slice(2)].sort((x, y) => G.ranks.indexOf(x[0]) - G.ranks.indexOf(y[0]));
@@ -265,91 +263,98 @@ const handText = h => `<span class="ct">${cardText(h.slice(0, 2))}${cardText(h.s
 const cardFace = (c, size) => `<span class="cd ${size} ${RED[c[1]] ? 'red' : ''}"><span>${c[0]}</span><span class="s">${SUIT[c[1]]}</span></span>`;
 const pct = x => (100 * x).toFixed(1) + '%';
 const combos = n => `${n} combo${n === 1 ? '' : 's'}`;
+const short = a => (a.kind === 'allin' ? 'all-in' : a.kind);
+const seat = p => G.seats[p];
 
-const seqOf = path => path.map(a => LETTER[a]).join('');
-const nodeAt = path => G.nodes[seqOf(path)];
-const byAggression = acts => [...acts].sort((a, b) => AGGRESSION[a] - AGGRESSION[b]);
+const nodeAt = path => path.reduce((n, a) => G.nodes[n.actions[a].next], G.nodes[G.root]);
+const lastAction = path => nodeAt(path.slice(0, -1)).actions[path[path.length - 1]];
 
-// Street amounts: both blinds act like antes, so a bet is 2 and a raise makes it 4.
-function actionLabel(node, a) {
-  const p = node.player, c = node.contrib, opp = c[1 - p];
-  if (a === 'bet' || a === 'raise') return `${a} ${opp - 1 + 2}`;
-  if (a === 'call') return `call ${opp - c[p]}`;
-  return a;
+// Bars and rows run from the most aggressive action to the most passive: all-in, raises and bets
+// (biggest first), check or call, fold.
+function order(node) {
+  const rank = a => (a.kind === 'fold' ? 3 : PASSIVE[a.kind] ? 2 : a.kind === 'allin' ? 0 : 1);
+  return node.actions.map((_, i) => i).sort((x, y) => {
+    const a = node.actions[x], b = node.actions[y];
+    return rank(a) - rank(b) || b.size - a.size;
+  });
 }
 
-function outcome(node, a) {
-  const p = node.player, c = node.contrib, pot = c[0] + c[1];
-  if (a === 'fold') return `${SEAT[p]} folds; ${SEAT[1 - p]} takes the pot of ${pot}`;
-  return `showdown for a pot of ${2 * Math.max(c[0], c[1])}`;
+// Bets shade from light to dark red as they grow; a raise is dark red and all-in darkest.
+function colors(node) {
+  const bets = node.actions.map((_, i) => i).filter(i => node.actions[i].kind === 'bet')
+    .sort((x, y) => node.actions[x].size - node.actions[y].size);
+  return node.actions.map((a, i) => {
+    if (a.kind === 'fold') return 'var(--fold)';
+    if (PASSIVE[a.kind]) return 'var(--call)';
+    if (a.kind === 'allin') return 'var(--allin)';
+    if (a.kind === 'raise' || bets.length === 1) return a.kind === 'raise' ? 'var(--raise)' : 'var(--bet)';
+    return `color-mix(in srgb, var(--raise) ${Math.round(100 * bets.indexOf(i) / (bets.length - 1))}%, var(--bet))`;
+  });
 }
 
-const isTerminal = (path, a) => !G.nodes[seqOf(path) + LETTER[a]];
-
-// How often `actor` still holds hand h after the actions in `path` (their own choices only).
-function reach(h, actor, path) {
-  let r = 1;
-  for (let i = 0; i < path.length; i++) {
-    const n = nodeAt(path.slice(0, i));
-    if (n.player === actor) r *= n.hands[h][path[i]];
+// How often `actor` still holds combo i after `path`: their starting range times their own choices.
+function reach(i, actor, path) {
+  let r = G.range0 ? G.range0[actor][i] : 1;
+  let n = G.nodes[G.root];
+  for (const a of path) {
+    if (n.player === actor) r *= n.probs[a][i];
+    n = G.nodes[n.actions[a].next];
   }
   return r;
 }
 
 // Range-weighted action frequencies over a set of combos.
-function mix(node, hands, reaches) {
-  const total = hands.reduce((s, h) => s + reaches[h], 0);
-  const freq = Object.fromEntries(node.actions.map(a => [a, total > 0 ? hands.reduce((s, h) => s + reaches[h] * node.hands[h][a], 0) / total : 0]));
-  return { total, share: total / hands.length, freq };
+function mix(node, idx, reaches) {
+  const total = idx.reduce((s, i) => s + reaches[i], 0);
+  const freq = node.actions.map((_, a) => (total > 0 ? idx.reduce((s, i) => s + reaches[i] * node.probs[a][i], 0) / total : 0));
+  return { total, share: total / idx.length, freq };
 }
 
-function whyOut(cls, h, actor, path) {
-  for (let i = 0; i < path.length; i++) {
-    const n = nodeAt(path.slice(0, i));
-    if (n.player === actor && n.hands[h][path[i]] === 0) {
-      return `Out of range: ${SEAT[actor]} never holds ${CELLS[cls].length === 1 ? handText(h) : cls} here, because earlier in this line ${SEAT[actor]} never chooses <b>${actionLabel(n, path[i]).toUpperCase()}</b> with it.`;
+function whyOut(cls, i, actor) {
+  const name = seat(actor).name;
+  const what = CELLS[cls].length === 1 ? handText(G.hands[i]) : cls;
+  if (G.range0 && G.range0[actor][i] === 0) return `Out of range: ${what} isn't in ${name}'s starting range for this spot.`;
+  let n = G.nodes[G.root];
+  for (const a of state.path) {
+    if (n.player === actor && n.probs[a][i] === 0) {
+      return `Out of range: ${name} never holds ${what} here, because earlier in this line ${name} never chooses <b>${n.actions[a].label.toUpperCase()}</b> with it.`;
     }
+    n = G.nodes[n.actions[a].next];
   }
   return '';
 }
 
 function setGame(key) {
   G = DATA.games[key];
-  HANDS = Object.keys(G.nodes[''].hands);
   CELLS = {};
-  for (const h of HANDS) (CELLS[handClass(h)] ||= []).push(h);
-  Object.assign(state, { game: key, path: [], hover: null, combo: null, sel: DEFAULT_CELL[key] in CELLS ? DEFAULT_CELL[key] : Object.keys(CELLS)[0] });
-  document.querySelectorAll('#games button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.game === key)));
-  renderSpot();
-  render();
-}
-
-function renderSpot() {
+  G.hands.forEach((h, i) => (CELLS[handClass(h)] ||= []).push(i));
+  ALL = G.hands.map((_, i) => i);
+  Object.assign(state, { game: key, path: [], hover: null, combo: null, sel: G.defaultCell in CELLS ? G.defaultCell : Object.keys(CELLS)[0] });
+  document.getElementById('games').innerHTML = DATA.order.map(k =>
+    `<button type="button" data-game="${k}" aria-pressed="${k === key}">${DATA.games[k].switch}</button>`).join('');
   document.getElementById('spot').innerHTML =
     `<span>${G.deck}</span><span class="dot">·</span><span>Flop</span><span class="ct">${G.board.map(cardText).join(' ')}</span>` +
-    `<span class="dot">·</span><span>Limit, bet 2, one raise</span>`;
-  document.getElementById('solve').textContent =
-    `CFR+ · ${G.iterations.toLocaleString('en')} iterations · exploitability ${G.exploitability.toFixed(6)} chips/hand`;
-  document.getElementById('foot').innerHTML =
-    `<span>Strategies are the CFR+ average policy from OpenSpiel. Combos that never reach a decision are shown as out of range: the solver's numbers there are placeholders with no effect on play.</span>` +
-    `<code>${G.load}</code>`;
+    `<span class="dot">·</span><span>${G.rules}</span>`;
+  document.getElementById('solve').innerHTML = G.mock ? `<span class="pill">Mock data</span>not a solve` : G.source;
+  document.getElementById('foot').innerHTML = `<span>${G.note}</span>` + (G.code ? `<code>${G.code}</code>` : '');
+  render();
 }
 
 function renderLine() {
   const el = document.getElementById('line');
   let html = `<div class="pcard flop"><div class="ph"><b>FLOP</b></div><div class="cards">${G.board.map(c => cardFace(c, 'sm')).join('')}</div></div>`;
+  let n = G.nodes[G.root];
   for (let i = 0; i <= state.path.length; i++) {
-    const prefix = state.path.slice(0, i);
-    const n = nodeAt(prefix);
     const current = i === state.path.length;
-    const items = n.actions.map(a => {
-      const chosen = !current && state.path[i] === a;
-      const end = isTerminal(prefix, a);
-      const tail = end ? `<span class="tail">ends</span>` : '';
-      const title = end ? ` title="Ends the hand: ${outcome(n, a)}"` : '';
-      return `<li><button type="button" class="pa${chosen ? ' chosen' : ''}${end ? ' end' : ''}" style="--c:${COLOR[a]}" data-depth="${i}" data-action="${a}"${end ? ' aria-disabled="true"' : ''}${title}>${actionLabel(n, a)}${tail}</button></li>`;
+    const cols = colors(n);
+    const items = n.actions.map((a, k) => {
+      const chosen = !current && state.path[i] === k;
+      const end = !a.next;
+      return `<li><button type="button" class="pa${chosen ? ' chosen' : ''}${end ? ' end' : ''}" style="--c:${cols[k]}" data-depth="${i}" data-action="${k}"` +
+        `${end ? ` aria-disabled="true" title="${a.end}"` : ''}>${a.label}${end ? '<span class="tail">ends</span>' : ''}</button></li>`;
     }).join('');
-    html += `<div class="pcard${current ? ' current' : ''}"><div class="ph"><b>${SEAT[n.player]}</b><span>${POS[n.player]}</span></div><ul>${items}</ul></div>`;
+    html += `<div class="pcard${current ? ' current' : ''}"><div class="ph"><b>${seat(n.player).name}</b><span>${seat(n.player).pos}</span></div><ul>${items}</ul></div>`;
+    if (!current) n = G.nodes[n.actions[state.path[i]].next];
   }
   el.innerHTML = html;
   const cur = el.querySelector('.pcard.current');
@@ -359,31 +364,32 @@ function renderLine() {
 }
 
 function renderGrid(node, reaches) {
-  const acts = byAggression(node.actions);
+  const ord = order(node), cols = colors(node);
   const n = G.ranks.length;
   const grid = document.getElementById('grid');
   grid.style.setProperty('--n', n);
-  grid.classList.toggle('dense', n > 4);
+  grid.classList.toggle('dense', n > 4 && n <= 8);
+  grid.classList.toggle('xdense', n > 8);
   let html = '';
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
       const cls = cellAt(i, j);
-      const hands = CELLS[cls];
-      if (!hands) {
+      const idx = CELLS[cls];
+      if (!idx) {
         html += `<div class="cell dead" title="${cls} can't be dealt on this board"><span class="lab">${cls}</span><span class="sub"><span>blocked</span></span></div>`;
         continue;
       }
-      const m = mix(node, hands, reaches);
+      const m = mix(node, idx, reaches);
       const live = m.total > 0;
-      const top = acts.reduce((t, a) => (m.freq[a] > m.freq[t] ? a : t), acts[0]);
+      const top = ord.reduce((t, a) => (m.freq[a] > m.freq[t] ? a : t), ord[0]);
       const height = live ? (state.scale ? 100 * m.share : 100) : 0;
-      const segs = live ? acts.map(a => `<i style="flex-basis:${100 * m.freq[a]}%;background:${COLOR[a]}"></i>`).join('') : '';
-      const label = live ? `${cls}, ${acts.map(a => `${actionLabel(node, a)} ${pct(m.freq[a])}`).join(', ')}` : `${cls}, not in range`;
-      const what = hands.length === 1 ? handText(hands[0]) : `<span>${combos(hands.length)}</span>`;
-      html += `<button type="button" class="cell${live ? '' : ' out'}${state.sel === cls ? ' sel' : ''}" data-cell="${cls}" aria-label="${label}" aria-pressed="${state.sel === cls}">` +
-        `<span class="fill" style="height:${height}%">${segs}</span>` +
-        `<span class="lab">${cls}</span>` +
-        `<span class="sub">${what}<span class="pc mono">${live ? Math.round(100 * m.freq[top]) + '% ' + top : 'out'}</span></span></button>`;
+      const segs = live ? ord.map(a => `<i style="flex-basis:${100 * m.freq[a]}%;background:${cols[a]}"></i>`).join('') : '';
+      const label = live ? `${cls}, ${ord.map(a => `${node.actions[a].label} ${pct(m.freq[a])}`).join(', ')}` : `${cls}, not in range`;
+      const what = idx.length === 1 ? handText(G.hands[idx[0]]) : `<span>${combos(idx.length)}</span>`;
+      const ink = `${height >= 78 ? ' lab-on' : ''}${height >= 22 ? ' sub-on' : ''}`;  // text sits on the fill, not the empty cell
+      html += `<button type="button" class="cell${live ? '' : ' out'}${state.sel === cls ? ' sel' : ''}${ink}" data-cell="${cls}" aria-label="${label}" aria-pressed="${state.sel === cls}">` +
+        `<span class="fill" style="height:${height}%">${segs}</span><span class="lab">${cls}</span>` +
+        `<span class="sub">${what}<span class="pc mono">${live ? Math.round(100 * m.freq[top]) + '% ' + short(node.actions[top]) : 'out'}</span></span></button>`;
     }
   }
   grid.innerHTML = html;
@@ -391,76 +397,75 @@ function renderGrid(node, reaches) {
 
 // The combo shown on the table: the one picked in the detail panel, else the cell's most-held combo.
 function shownCombo(cls, reaches) {
-  const hands = CELLS[cls];
-  if (hands.includes(state.combo)) return state.combo;
-  return hands.reduce((best, h) => (reaches[h] > reaches[best] ? h : best), hands[0]);
+  const idx = CELLS[cls];
+  if (idx.includes(state.combo)) return state.combo;
+  return idx.reduce((best, i) => (reaches[i] > reaches[best] ? i : best), idx[0]);
 }
 
 function renderTable(node, combo) {
   const p = node.player;
-  const seat = s => {
-    const hand = s === p
-      ? `<span class="cards">${cardFace(combo.slice(0, 2), 'md')}${cardFace(combo.slice(2), 'md')}</span>`
+  const h = G.hands[combo];
+  const seatHtml = s => {
+    const cards = s === p
+      ? `<span class="cards">${cardFace(h.slice(0, 2), 'md')}${cardFace(h.slice(2), 'md')}</span>`
       : `<span class="cards"><span class="cd md back"></span><span class="cd md back"></span></span>`;
-    const badge = `<span class="badge"><b>${SEAT[s]}</b><span>${POS[s]} · in ${node.contrib[s]}</span></span>`;
-    const dealer = s === 1 ? `<span class="dealer" title="Dealer button: P2 acts last">D</span>` : '';
-    return `<div class="seat ${s === 1 ? 'top' : 'bottom'}${s === p ? ' acting' : ''}">${badge}${hand}${dealer}</div>`;
+    const badge = `<span class="badge"><b>${seat(s).name}</b><span>${seat(s).pos} · ${node.badge[s]}</span></span>`;
+    const dealer = s === 1 ? `<span class="dealer" title="Dealer button: ${seat(1).name} acts last">D</span>` : '';
+    return `<div class="seat ${s === 1 ? 'top' : 'bottom'}${s === p ? ' acting' : ''}">${badge}${cards}${dealer}</div>`;
   };
-  const pot = node.contrib[0] + node.contrib[1];
-  document.getElementById('felt').innerHTML =
-    seat(1) +
-    `<div class="center"><div class="pot">Pot <b class="mono">${pot}</b></div><div class="cards">${G.board.map(c => cardFace(c, 'lg')).join('')}</div></div>` +
-    seat(0);
-  const toCall = node.contrib[1 - p] - node.contrib[p];
-  const raised = state.path.filter(a => a === 'bet' || a === 'raise').length > 1;
-  document.getElementById('status').innerHTML = toCall > 0
-    ? `<b>${SEAT[p]} to act</b>, facing ${raised ? 'a raise' : 'a bet'}: ${toCall} to call`
-    : `<b>${SEAT[p]} to act</b> ${state.path.length ? 'after a check' : 'first'}`;
+  document.getElementById('felt').innerHTML = seatHtml(1) +
+    `<div class="center"><div class="pot">Pot <b class="mono">${node.pot}</b></div><div class="cards">${G.board.map(c => cardFace(c, 'lg')).join('')}</div></div>` +
+    seatHtml(0);
+  const name = `<b>${seat(p).name} to act</b>`;
+  document.getElementById('status').innerHTML = node.toCall > 0
+    ? `${name}, facing ${lastAction(state.path).label}: ${node.toCall} to call`
+    : `${name} ${state.path.length ? 'after a ' + lastAction(state.path).kind : 'first'}`;
 }
 
 function renderSummary(node, reaches) {
-  const acts = byAggression(node.actions);
-  const m = mix(node, HANDS, reaches);
-  document.getElementById('sum-who').textContent = `${SEAT[node.player]}'s whole range here`;
-  document.getElementById('sum-count').textContent = `${m.total.toFixed(2)} of ${HANDS.length} combos`;
-  document.getElementById('sum-labels').innerHTML = acts.map(a => `<span style="--c:${COLOR[a]}">${actionLabel(node, a)}<b>${pct(m.freq[a])}</b></span>`).join('');
-  document.getElementById('sum-bar').innerHTML = acts.map(a => `<i style="flex-basis:${100 * m.freq[a]}%;background:${COLOR[a]}"></i>`).join('');
+  const ord = order(node), cols = colors(node);
+  const m = mix(node, ALL, reaches);
+  document.getElementById('sum-who').textContent = `${seat(node.player).name}'s whole range here`;
+  document.getElementById('sum-count').textContent = `${m.total.toFixed(m.total < 100 ? 2 : 0)} of ${G.hands.length} combos`;
+  document.getElementById('sum-labels').innerHTML = ord.map(a => `<span style="--c:${cols[a]}">${node.actions[a].label}<b>${pct(m.freq[a])}</b></span>`).join('');
+  document.getElementById('sum-bar').innerHTML = ord.map(a => `<i style="flex-basis:${100 * m.freq[a]}%;background:${cols[a]}"></i>`).join('');
 }
 
 function renderDetail(node, reaches, cls, combo) {
-  const actor = node.player;
-  const hands = CELLS[cls];
-  const acts = byAggression(node.actions);
-  const m = mix(node, hands, reaches);
-  const made = [...new Set(hands.map(h => G.made[h]))].join(' / ');
+  const actor = node.player, name = seat(actor).name;
+  const idx = CELLS[cls];
+  const ord = order(node), cols = colors(node);
+  const m = mix(node, idx, reaches);
+  const h = G.hands[combo];
   let body;
   if (m.total > 0) {
-    const reachText = hands.length === 1
-      ? (m.share === 1 ? `Always in ${SEAT[actor]}'s range here.` : `In ${SEAT[actor]}'s range ${pct(m.share)} of the time: ${SEAT[actor]} mixes earlier in the line with this hand.`)
-      : `In ${SEAT[actor]}'s range here: ${pct(m.share)} of its ${combos(hands.length)}.`;
-    body = `<div class="det-reach">${reachText}</div>` +
-      `<div class="rows">${acts.map(a => `<div class="row" style="--c:${COLOR[a]}"><span class="an">${actionLabel(node, a)}</span><span class="track"><i style="width:${100 * m.freq[a]}%"></i></span><span class="pct mono">${pct(m.freq[a])}</span></div>`).join('')}</div>`;
+    const reachText = idx.length > 1
+      ? `In ${name}'s range here: ${pct(m.share)} of its ${combos(idx.length)}.`
+      : m.share === 1 ? `Always in ${name}'s range here.` : `In ${name}'s range ${pct(m.share)} of the time.`;
+    body = `<div class="det-reach">${reachText}</div><div class="rows">` +
+      ord.map(a => `<div class="row" style="--c:${cols[a]}"><span class="an">${node.actions[a].label}</span><span class="track"><i style="width:${100 * m.freq[a]}%"></i></span><span class="pct mono">${pct(m.freq[a])}</span></div>`).join('') +
+      `</div>`;
   } else {
-    body = `<p class="det-empty">${whyOut(cls, hands[0], actor, state.path)}</p>`;
+    body = `<p class="det-empty">${whyOut(cls, idx[0], actor)}</p>`;
   }
-  if (hands.length > 1) {
-    body += `<div class="label combos-head">Combos</div><div class="combos">${hands.map(h => {
-      const r = reaches[h];
-      const top = acts.reduce((t, a) => (node.hands[h][a] > node.hands[h][t] ? a : t), acts[0]);
-      const right = r > 0 ? `${Math.round(100 * node.hands[h][top])}% ${top}` : 'out';
-      const bar = r > 0 ? acts.map(a => `<i style="flex-basis:${100 * node.hands[h][a]}%;background:${COLOR[a]}"></i>`).join('') : '';
-      return `<button type="button" class="combo${h === combo ? ' on' : ''}${r > 0 ? '' : ' out'}" data-combo="${h}" title="${r > 0 ? `In range ${pct(r)}` : 'Out of range here'}">` +
-        `<span class="ctop">${handText(h)}<span>${right}</span></span><span class="bar">${bar}</span></button>`;
+  if (idx.length > 1) {
+    body += `<div class="label combos-head">Combos</div><div class="combos">${idx.map(i => {
+      const r = reaches[i];
+      const top = ord.reduce((t, a) => (node.probs[a][i] > node.probs[t][i] ? a : t), ord[0]);
+      const right = r > 0 ? `${Math.round(100 * node.probs[top][i])}% ${short(node.actions[top])}` : 'out';
+      const bar = r > 0 ? ord.map(a => `<i style="flex-basis:${100 * node.probs[a][i]}%;background:${cols[a]}"></i>`).join('') : '';
+      return `<button type="button" class="combo${i === combo ? ' on' : ''}${r > 0 ? '' : ' out'}" data-combo="${i}" title="${G.made[i]}; ${r > 0 ? `in range ${pct(r)}` : 'out of range here'}">` +
+        `<span class="ctop">${handText(G.hands[i])}<span>${right}</span></span><span class="bar">${bar}</span></button>`;
     }).join('')}</div>`;
   }
   document.getElementById('detail').innerHTML =
-    `<div class="det-head"><span class="cards">${cardFace(combo.slice(0, 2), 'md')}${cardFace(combo.slice(2), 'md')}</span>` +
-    `<span class="det-name"><b>${cls}</b><span>${made}${hands.length > 1 ? ' · ' + combos(hands.length) : ''}</span></span></div>` + body;
+    `<div class="det-head"><span class="cards">${cardFace(h.slice(0, 2), 'md')}${cardFace(h.slice(2), 'md')}</span>` +
+    `<span class="det-name"><b>${cls}</b><span>${G.made[combo]}${idx.length > 1 ? ' · ' + combos(idx.length) : ''}</span></span></div>` + body;
 }
 
 function reaches() {
   const node = nodeAt(state.path);
-  return Object.fromEntries(HANDS.map(h => [h, reach(h, node.player, state.path)]));
+  return ALL.map(i => reach(i, node.player, state.path));
 }
 
 function renderFocus(r) {
@@ -474,8 +479,8 @@ function renderFocus(r) {
 function render() {
   const node = nodeAt(state.path);
   const r = reaches();
-  document.getElementById('grid-who').textContent = `${SEAT[node.player]} · ${POS_LONG[node.player]}`;
-  document.getElementById('grid-count').textContent = `Pot ${node.contrib[0] + node.contrib[1]}`;
+  document.getElementById('grid-who').textContent = `${seat(node.player).name} · ${seat(node.player).long}`;
+  document.getElementById('grid-count').textContent = `Pot ${node.pot}`;
   renderLine();
   renderGrid(node, r);
   renderSummary(node, r);
@@ -491,7 +496,7 @@ document.getElementById('games').addEventListener('click', e => {
 document.getElementById('line').addEventListener('click', e => {
   const b = e.target.closest('.pa');
   if (!b || b.classList.contains('end')) return;
-  go([...state.path.slice(0, +b.dataset.depth), b.dataset.action]);
+  go([...state.path.slice(0, +b.dataset.depth), +b.dataset.action]);
 });
 document.getElementById('back').addEventListener('click', () => go(state.path.slice(0, -1)));
 document.getElementById('reset').addEventListener('click', () => go([]));
@@ -499,7 +504,7 @@ document.getElementById('scale').addEventListener('change', e => { state.scale =
 document.getElementById('detail').addEventListener('click', e => {
   const b = e.target.closest('.combo');
   if (!b) return;
-  state.sel = state.hover || state.sel; state.hover = null; state.combo = b.dataset.combo; render();
+  state.sel = state.hover || state.sel; state.hover = null; state.combo = +b.dataset.combo; render();
 });
 
 const grid = document.getElementById('grid');
@@ -521,5 +526,5 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'Backspace' || e.key === 'ArrowLeft') && state.path.length) { e.preventDefault(); go(state.path.slice(0, -1)); }
 });
 
-setGame('mini');
+setGame(DATA.order[0]);
 </script>
