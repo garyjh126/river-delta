@@ -23,7 +23,7 @@ layout at full size; the page labels them as mock.
 ```bash
 uv run python scripts/solve_reference.py mini   # ~10 s  -> build/mini.json
 uv run python scripts/solve_reference.py c1     # ~30 min -> build/c1.json
-uv run python viewer/mock_holdem.py             # ~5 s   -> build/holdem.json (mock)
+uv run python viewer/mock_holdem.py             # ~1 s   -> build/holdem.json (mock)
 uv run python viewer/build.py                   # -> build/viewer.html, open it in a browser
 ```
 
