@@ -1,12 +1,27 @@
 // The C++ engine as a Python module, cfr_cpp. engine/native.py builds and imports it.
+#include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include "cards.hpp"
 #include "cfr.hpp"
 
 namespace py = pybind11;
 
+namespace {
+
+// A copy of row-major data as a numpy array of shape (rows, cols).
+py::array_t<double> matrix(const std::vector<double>& data, size_t rows, size_t cols) {
+    py::array_t<double> out({rows, cols});
+    std::copy(data.begin(), data.end(), out.mutable_data());
+    return out;
+}
+
+}  // namespace
+
 PYBIND11_MODULE(cfr_cpp, m) {
+    m.def("hand_value", &cards::value, py::arg("cards"));
+
     py::class_<cfr::Spot>(m, "Spot")
         .def(py::init([](std::string ranks, std::string suits, std::vector<std::string> board, int blind,
                          int bet, int max_raises, std::optional<int> stack, std::vector<double> pot_sizes) {
@@ -30,5 +45,12 @@ PYBIND11_MODULE(cfr_cpp, m) {
     py::class_<cfr::Solver>(m, "Solver")
         .def(py::init<cfr::Spot>(), py::arg("spot"))
         .def_property_readonly("hands", &cfr::Solver::hands)
-        .def_property_readonly("nodes", &cfr::Solver::nodes);
+        .def_property_readonly("nodes", &cfr::Solver::nodes)
+        .def_property_readonly("compatible", [](const cfr::Solver& s) {
+            return matrix(s.compatible(), s.hands().size(), s.hands().size());
+        })
+        .def_property_readonly("showdown", [](const cfr::Solver& s) {
+            return matrix(s.showdown(), s.hands().size(), s.hands().size());
+        })
+        .def_property_readonly("deal_prob", &cfr::Solver::deal_prob);
 }

@@ -1,5 +1,7 @@
 #include "cfr.hpp"
 
+#include "cards.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -28,6 +30,31 @@ std::vector<std::string> deal_hands(const Spot& spot) {
 
 Solver::Solver(Spot spot) : spot_(std::move(spot)) {
     hands_ = deal_hands(spot_);
+    n_ = static_cast<int>(hands_.size());
+    std::vector<int> strength;
+    for (const auto& h : hands_) {
+        std::vector<std::string> five = spot_.board;
+        five.push_back(h.substr(0, 2));
+        five.push_back(h.substr(2, 2));
+        strength.push_back(cards::value(five));
+    }
+    compatible_.resize(n_ * n_);
+    showdown_.resize(n_ * n_);
+    for (int i = 0; i < n_; ++i) {
+        for (int j = 0; j < n_; ++j) {
+            const auto &a = hands_[i], &b = hands_[j];
+            const bool clash = a.compare(0, 2, b, 0, 2) == 0 || a.compare(0, 2, b, 2, 2) == 0 ||
+                               a.compare(2, 2, b, 0, 2) == 0 || a.compare(2, 2, b, 2, 2) == 0;
+            compatible_[i * n_ + j] = clash ? 0.0 : 1.0;
+            const double sign = (strength[i] > strength[j]) - (strength[i] < strength[j]);
+            showdown_[i * n_ + j] = sign * compatible_[i * n_ + j];
+        }
+    }
+    double opponents = 0;
+    for (int j = 0; j < n_; ++j) {
+        opponents += compatible_[j];
+    }
+    deal_prob_ = 1 / (n_ * opponents);
     build_tree("", 0, {spot_.blind, spot_.blind});
 }
 

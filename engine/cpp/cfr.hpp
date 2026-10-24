@@ -46,12 +46,20 @@ public:
     const Spot& spot() const { return spot_; }
     const std::vector<std::string>& hands() const { return hands_; }
     const std::vector<Node>& nodes() const { return nodes_; }  // nodes()[0] is the root
+    // compatible[i * n + j]: 1 if hands i and j share no card, so both can be dealt at once.
+    const std::vector<double>& compatible() const { return compatible_; }
+    // showdown[i * n + j]: +1 if hand i beats hand j, -1 if it loses, 0 for a tie or a clash.
+    const std::vector<double>& showdown() const { return showdown_; }
+    double deal_prob() const { return deal_prob_; }
 
 private:
     int build_tree(const std::string& seq, int player, std::array<int, 2> contrib);
 
     Spot spot_;
     std::vector<std::string> hands_;
+    int n_ = 0;
+    std::vector<double> compatible_, showdown_;
+    double deal_prob_ = 0;  // every hand leaves the same number of opponent hands
     std::vector<Node> nodes_;
 };
 
