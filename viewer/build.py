@@ -48,7 +48,9 @@ def solved_game(key: str, switch: str, deck: str, default_cell: str) -> dict:
         "source": (f"Our engine · {METHOD_NAMES[s['method']]} · {s['iterations']:,} iterations in {s['seconds']:.1f} s"
                    f" · exploitability {s['exploitability']:.6f} chips/hand"),
         "note": ("Strategies are the average policy of this repo's engine (engine/cfr.py). Its tests check it against "
-                 "OpenSpiel on the same games: identical iterates and the same exploitability. Bet amounts leave out "
+                 "OpenSpiel on the same games: identical iterates and the same exploitability. EVs come from the same "
+                 "engine, checked against a walk over every deal and betting line under OpenSpiel's rules (Mini, limit "
+                 "and no-limit); they're left out where the opponent never gets to a point. Bet amounts leave out "
                  "the blinds, which act like antes. Combos that never reach a decision are shown as out of range: "
                  "the solver's numbers there are placeholders with no effect on play."),
         "code": s["load"],

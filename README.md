@@ -2,7 +2,7 @@
 
 A heads-up poker solver, at its very start. What's here is the first slice of the engine and the
 strategy viewer it feeds: a page that walks a game's betting tree and shows how often each hand
-takes each action at every decision.
+takes each action at every decision, and what each hand and action is worth there.
 
 ## The engine
 
@@ -60,7 +60,11 @@ The viewer covers four games, each on a fixed flop with two hole cards per playe
   combos, 150 hold a board card). Button against big blind in a single-raised pot, 100 bb deep,
   no-limit flop betting: bets of 33%, 75% and 150% of the pot, one raise, all-in.
 
-Mini and both C1 games show our engine's strategies. **The Hold'em numbers are mock data** from a
+Mini and both C1 games show our engine's strategies. Their EV tab shows each hand's expected value
+at every decision, and each action's, in chips: what the hand wins from the pot by the end, minus
+the chips it puts in after the blinds, which count as dead money. The EVs come from the engine
+(`Solver.evs`); the tests check them against a walk over every deal and betting line under
+OpenSpiel's rules. **The Hold'em numbers are mock data** from a
 hand-strength heuristic (`viewer/mock_holdem.py`), there only to judge the layout at full size;
 the page labels them as mock.
 

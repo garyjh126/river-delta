@@ -115,6 +115,88 @@ def test_exploitability_matches_openspiel(game, iterations):
     assert solver.exploitability() < 0.05
 
 
+def openspiel_values(game, policy: dict) -> dict:
+    """Walk every history of an OpenSpiel game, both players following `policy`. Per infostate:
+    the chance-and-opponent reach summed over its histories, and per action that reach times the
+    acting player's expected return after the action (OpenSpiel's returns, blinds included)."""
+    table = {}
+
+    def walk(state, reach):  # reach: chance, player 0, player 1
+        if state.is_terminal():
+            return np.array(state.returns())
+        if state.is_chance_node():
+            return sum(p * walk(state.child(a), (reach[0] * p, reach[1], reach[2])) for a, p in state.chance_outcomes())
+        player, key = state.current_player(), state.information_state_string()
+        others = reach[0] * reach[2 - player]
+        entry = table.setdefault(key, [0.0, {}])
+        entry[0] += others
+        value = 0
+        for a, p in policy[key]:
+            after = list(reach)
+            after[1 + player] *= p
+            child = walk(state.child(a), after)
+            entry[1][a] = entry[1].get(a, 0) + others * child[player]
+            value = value + p * child
+        return value
+
+    walk(game.new_initial_state(), (1.0, 1.0, 1.0))
+    return table
+
+
+@pytest.mark.parametrize("game", ["mini", "mini_nl"])
+def test_evs_match_openspiel(game):
+    """Each hand's EV for each action, and the opponent's reach behind it, from a walk over every
+    deal and betting line with OpenSpiel's rules and returns. Blinds are dead money in our EV."""
+    spot = SPOTS[game]
+    solver = Solver(spot)
+    solver.iterate(200)
+    keys = {k: [a for a, _ in v] for k, v in cfr_plus_table(game).items()}
+    table = openspiel_values(pyspiel.load_game(spot.openspiel), as_openspiel(solver, keys))
+    evs = solver.evs()
+    defined = undefined = 0
+    for key, (weight, totals) in table.items():
+        _, hand, seq = info(key)
+        node, i = solver.by_seq[seq], solver.index[hand]
+        action_ev, opp_reach = evs[seq]
+        assert opp_reach[i] == pytest.approx(len(solver.hands) * weight, abs=1e-12)  # each hand is dealt 1/n of the time
+        for k, a in enumerate(node.actions):
+            if weight > 0:
+                assert action_ev[k, i] == pytest.approx(totals[ACTION_ID[a]] / weight + spot.blind, abs=1e-9)
+                defined += 1
+            else:
+                assert np.isnan(action_ev[k, i])
+                undefined += 1
+    assert defined > 0
+    assert defined + undefined == sum(len(n.actions) for n in solver.nodes) * len(solver.hands)
+
+
+def test_evs_add_up():
+    """Player 1's EVs at the root average to its value plus the blind it has in already; folding
+    without having bet is worth 0; the opponent reaches the root with every hand."""
+    solver = Solver(SPOTS["c1_nl"], method="dcfr")
+    solver.iterate(100)
+    evs = solver.evs()
+    action_ev, opp_reach = evs[""]
+    hand_ev = (solver.average(solver.root) * action_ev).sum(axis=0)
+    assert hand_ev.mean() == pytest.approx(solver.value(0) + solver.spot.blind, abs=1e-12)
+    assert np.all(opp_reach == 1)
+    folds = 0
+    for node in solver.nodes:
+        if "fold" in node.actions and node.contrib[node.player] == solver.spot.blind:
+            fold_ev = evs[node.seq][0][node.actions.index("fold")]
+            assert np.all((fold_ev == 0) | np.isnan(fold_ev))
+            folds += 1
+    assert folds > 0
+
+
+def test_ev_is_undefined_where_the_opponent_never_reaches():
+    solver = Solver(SPOTS["mini"])
+    solver.strategy_sum[""][0] = 1  # player 1 always checks, so player 2 never faces a bet
+    action_ev, opp_reach = solver.evs()["r"]
+    assert np.all(np.isnan(action_ev)) and np.all(opp_reach == 0)
+    assert solver.export()["nodes"]["r"]["ev"] == [None] * len(solver.hands)
+
+
 def test_mini_converges_to_its_value():
     """Mini's equilibrium value is 0 for both seats (OpenSpiel: about -5e-7 after 5,000 CFR+ iterations)."""
     solver = Solver(SPOTS["mini"])
@@ -147,7 +229,8 @@ def test_export_is_a_complete_tree():
     tree = solver.export()
     assert set(tree["nodes"]) == {node.seq or "root" for node in solver.nodes}
     for node in tree["nodes"].values():
-        assert len(node["probs"]) == len(node["actions"])
+        assert len(node["probs"]) == len(node["actions"]) == len(node["actionEv"])
+        assert len(node["ev"]) == len(node["oppReach"]) == len(tree["hands"])
         for a in node["actions"]:
             assert (a["next"] in tree["nodes"]) if a["next"] else a["end"]
         assert np.allclose(np.sum(node["probs"], axis=0), 1, atol=5e-4)  # rounded to 4 decimals

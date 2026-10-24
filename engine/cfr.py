@@ -227,15 +227,18 @@ class Solver:
             for player in (0, 1):
                 self._cfr(self.root, player, np.ones(n), np.ones(n))
 
-    def _evaluate(self, node, player: int, opp: np.ndarray, best: bool) -> np.ndarray:
+    def _evaluate(self, node, player: int, opp: np.ndarray, best: bool, record: dict | None = None) -> np.ndarray:
         """`player`'s counterfactual values when both play the average strategy, or when
-        `player` best-responds to the other's average strategy (`best`)."""
+        `player` best-responds to the other's average strategy (`best`). With `record`, also keeps
+        each of `player`'s nodes' action values and the opponent's reach behind each hand there."""
         if isinstance(node, Terminal):
             return self._terminal(node, player, opp)
         sigma = self.average(node)
         if node.player != player:
-            return sum(self._evaluate(c, player, opp * sigma[a], best) for a, c in enumerate(node.children))
-        values = np.array([self._evaluate(c, player, opp, best) for c in node.children])
+            return sum(self._evaluate(c, player, opp * sigma[a], best, record) for a, c in enumerate(node.children))
+        values = np.array([self._evaluate(c, player, opp, best, record) for c in node.children])
+        if record is not None:
+            record[node.seq] = values, self.compatible @ opp
         return values.max(axis=0) if best else (sigma * values).sum(axis=0)
 
     def value(self, player: int) -> float:
@@ -250,13 +253,36 @@ class Solver:
         """Mean gain of the two best responses: OpenSpiel's definition for two-player zero-sum games."""
         return (self.best_response(0) + self.best_response(1)) / 2
 
+    def evs(self) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+        """Per decision node: the acting player's EV for each action and hand (actions x hands), and
+        the chance that the opponent's range reaches the node given each hand.
+
+        EV is expected chips given the hand and the node, with both playing the average strategy.
+        The blinds count as dead money: EV is the chips won from the pot minus the chips put in
+        after the blinds, so folding without having bet is worth 0. It is NaN where no opponent
+        hand that the hand leaves possible reaches the node. The opponent's reach weights hands
+        when their EVs are averaged (card removal)."""
+        record = {}
+        for player in (0, 1):
+            self._evaluate(self.root, player, np.ones(len(self.hands)), False, record)
+        dealt = self.compatible[0].sum()  # opponent hands left by any one hand
+        return {seq: (values / np.where(mass > 0, mass, np.nan) + self.spot.blind, mass / dealt)
+                for seq, (values, mass) in record.items()}
+
     def export(self) -> dict:
         """The average strategy as the viewer's tree: per node its actions (with labels and where
-        each leads) and, per action, the probability for every hand in `hands`. Amounts in labels
-        leave out the blinds, which act like antes: "bet 2" puts 2 more chips in."""
+        each leads) and, per action, the probability for every hand in `hands`; with each hand's
+        EV, its EV for each action and the opponent's reach behind it (see `evs`). EVs are null
+        where that reach rounds to 0: the opponent (almost) never gets there, so they would rest on
+        an unconverged sliver of range. Amounts in labels leave out the blinds, which act like
+        antes: "bet 2" puts 2 more chips in."""
         def nid(node: Node) -> str:
             return node.seq or "root"
 
+        def chips(row) -> list:
+            return [None if np.isnan(x) else round(float(x), 4) for x in row]
+
+        evs = self.evs()
         nodes = {}
         for node in sorted(self.nodes, key=lambda n: (len(n.seq), n.seq)):
             p, c = node.player, node.contrib
@@ -277,6 +303,9 @@ class Solver:
                            else f"Showdown for a pot of {2 * child.contrib[0]}")
                     actions.append({"kind": kind, "label": label, "size": size, "next": None, "end": end})
             avg = self.average(node)
+            action_ev, opp_reach = evs[node.seq]
+            opp_reach = opp_reach.round(4)
+            action_ev = np.where(opp_reach > 0, action_ev, np.nan)
             nodes[nid(node)] = {
                 "player": p,
                 "pot": pot,
@@ -284,6 +313,9 @@ class Solver:
                 "badge": [f"in {c[0]}", f"in {c[1]}"],
                 "actions": actions,
                 "probs": [[round(float(x), 4) for x in row] for row in avg],
+                "ev": chips((avg * action_ev).sum(axis=0)),
+                "actionEv": [chips(row) for row in action_ev],
+                "oppReach": [float(x) for x in opp_reach],
             }
         return {"hands": self.hands, "root": "root", "nodes": nodes}
 

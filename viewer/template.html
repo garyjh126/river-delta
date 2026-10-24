@@ -12,6 +12,7 @@
   --card: #eef2f1; --ink: #142024; --suit-red: #c8323a; --on-fill: #ffffff;
   --bet: #df634d; --raise: #b0304a; --allin: #8f2552; --call: #3aa46b; --fold: #4c84c8;
   --empty: #131b1e; --dead: #0c1214; --shadow: rgba(0, 0, 0, 0.45);
+  --heat: #7c69e2;
   --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
   --body: "Barlow", "Segoe UI", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -24,6 +25,7 @@
   --card: #ffffff; --ink: #142024; --suit-red: #c22d36; --on-fill: #ffffff;
   --bet: #d8553f; --raise: #a3263e; --allin: #7d1a43; --call: #2c9459; --fold: #3c72b6;
   --empty: #e2e8e6; --dead: #d3dbd8; --shadow: rgba(20, 32, 29, 0.18);
+  --heat: #5039c0;
   color-scheme: light; } }
 :root[data-theme="light"] {
   --bg: #e9eeec; --panel: #ffffff; --raised: #f2f5f4; --line: #d0dad7; --fg: #14201d; --muted: #586965; --faint: #9eaca9;
@@ -32,9 +34,11 @@
   --card: #ffffff; --ink: #142024; --suit-red: #c22d36; --on-fill: #ffffff;
   --bet: #d8553f; --raise: #a3263e; --allin: #7d1a43; --call: #2c9459; --fold: #3c72b6;
   --empty: #e2e8e6; --dead: #d3dbd8; --shadow: rgba(20, 32, 29, 0.18);
+  --heat: #5039c0;
   color-scheme: light; }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { background: var(--bg); color: var(--fg); font: 15px/1.45 var(--body); }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
 .app { max-width: 1320px; margin: 0 auto; padding-block: 14px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 14px; }
@@ -49,10 +53,11 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
 .brand { font: 700 24px/1 var(--display); letter-spacing: 0.01em; }
 .spot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--muted); font-size: 14px; }
 .spot .dot { color: var(--faint); }
-.games { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; align-self: center; }
-.games button { background: var(--panel); border: 0; padding: 7px 12px; font: 600 13px/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); cursor: pointer; }
-.games button + button { border-left: 1px solid var(--line); }
-.games button[aria-pressed="true"] { background: var(--raised); color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); }
+.games, .tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; align-self: center; }
+.games button, .tabs button { background: var(--panel); border: 0; padding: 7px 12px; font: 600 13px/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); cursor: pointer; }
+.games button + button, .tabs button + button { border-left: 1px solid var(--line); }
+.games button[aria-pressed="true"], .tabs button[aria-pressed="true"] { background: var(--raised); color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); }
+.tabs button:disabled { opacity: 0.4; cursor: default; }
 .solve { margin-left: auto; font-size: 12px; color: var(--muted); }
 
 /* Card faces */
@@ -93,7 +98,7 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
 .work { display: grid; grid-template-columns: minmax(0, 720px) minmax(360px, 1fr); gap: 18px; align-items: start; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
 .grid-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 12px; }
-.grid-head .who { display: flex; align-items: baseline; gap: 10px; }
+.grid-head .who { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
 .grid-head .who b { font: 700 18px/1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; }
 .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
 .toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
@@ -123,6 +128,8 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
 .grid.xdense .cell .lab { top: 3px; left: 4px; font-size: clamp(8px, 1.05vw, 14px); letter-spacing: 0; }
 .grid.xdense .cell .sub { display: none; }
 .grid.xdense .cell.sel { outline-width: 2px; outline-offset: -2px; }
+.legend { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.legend .ramp { width: 92px; height: 10px; border-radius: 3px; background: linear-gradient(to right in oklab, color-mix(in oklab, var(--heat) 12%, var(--empty)), var(--heat)); }
 .pill { display: inline-block; margin-right: 8px; padding: 3px 7px; border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); font: 600 11px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; }
 .grid-note { margin: 12px 0 0; max-width: 72ch; font-size: 13px; color: var(--muted); }
 
@@ -151,6 +158,8 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
 .sum-labels b { color: var(--fg); font: 600 13px var(--mono); margin-left: 4px; }
 .bar { display: flex; height: 12px; border-radius: 3px; overflow: hidden; background: var(--empty); }
 .bar i { height: 100%; }
+.sum-ev { margin-top: 10px; font-size: 14px; color: var(--muted); }
+.sum-ev b { color: var(--fg); font-size: 16px; }
 
 /* Hand detail */
 .det-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
@@ -164,6 +173,11 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
 .row .track { height: 22px; background: var(--empty); border-radius: 3px; overflow: hidden; }
 .row .track i { display: block; height: 100%; background: var(--c); transition: width .2s; }
 .row .pct { text-align: right; font-size: 14px; }
+.rows.ev .row { grid-template-columns: 100px minmax(0, 1fr) 52px 56px; }
+.row .evn { text-align: right; font-size: 14px; }
+.row.cols .label { text-align: right; font-size: 11px; }
+.ev-line { display: flex; align-items: baseline; gap: 8px; margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+.ev-line b { font: 600 22px/1 var(--mono); color: var(--fg); }
 .det-empty { font-size: 14px; color: var(--muted); margin: 6px 0 0; max-width: 46ch; }
 .combos-head { margin: 16px 0 8px; }
 .combos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
@@ -215,11 +229,14 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
   <main class="work">
     <section class="panel">
       <div class="grid-head">
+        <div class="tabs" id="tabs" role="group" aria-label="View"><button type="button" data-view="strategy">Strategy</button><button type="button" data-view="ev">EV</button></div>
         <div class="who"><b id="grid-who"></b><span class="label" id="grid-count"></span></div>
-        <label class="toggle" for="scale"><input type="checkbox" id="scale" checked><span class="switch"></span>Bar height shows range</label>
+        <label class="toggle" for="scale" id="scale-toggle"><input type="checkbox" id="scale" checked><span class="switch"></span>Bar height shows range</label>
+        <div class="legend" id="legend" hidden></div>
       </div>
       <div class="grid" id="grid"></div>
-      <p class="grid-note">Each cell holds the two-card combos of one hand: suited above the diagonal, offsuit below, pairs on it. Colours show how often each action is taken, averaged over the cell's combos that are still in range; bigger bets are darker. With "bar height shows range" on, the filled height is the share of the cell's combos the player still holds at this point. Hatched cells can't be dealt on this board.</p>
+      <p class="grid-note" id="note-ev" hidden>Each cell shows the EV of its combos at this decision, in chips: what they win from the pot by the end of the hand, minus the chips put in after the blinds, against the opponent's range here with both players following the solve's strategy. The blinds count as dead money, so folding without having bet is worth 0. A cell averages its combos by how often each one is here, card removal included. Stronger violet means higher EV; the scale runs from the lowest EV (or 0) to the highest. Hatched cells can't be dealt on this board.</p>
+      <p class="grid-note" id="note-strategy">Each cell holds the two-card combos of one hand: suited above the diagonal, offsuit below, pairs on it. Colours show how often each action is taken, averaged over the cell's combos that are still in range; bigger bets are darker. With "bar height shows range" on, the filled height is the share of the cell's combos the player still holds at this point. Hatched cells can't be dealt on this board.</p>
     </section>
 
     <aside class="side">
@@ -231,6 +248,7 @@ button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--a
         <div class="sum-head"><span class="label" id="sum-who"></span><span class="mono label" id="sum-count"></span></div>
         <div class="sum-labels" id="sum-labels"></div>
         <div class="bar" id="sum-bar"></div>
+        <div class="sum-ev" id="sum-ev" hidden></div>
       </section>
       <section class="panel" aria-label="Selected hand" id="detail"></section>
     </aside>
@@ -247,7 +265,7 @@ const RED = { d: true, h: true };
 const PASSIVE = { check: true, call: true };
 
 let G, CELLS, ALL;
-const state = { game: null, path: [], sel: null, hover: null, combo: null, scale: true };
+const state = { game: null, view: 'strategy', path: [], sel: null, hover: null, combo: null, scale: true };
 
 const handClass = h => {
   const [a, b] = [h.slice(0, 2), h.slice(2)].sort((x, y) => G.ranks.indexOf(x[0]) - G.ranks.indexOf(y[0]));
@@ -262,6 +280,7 @@ const cardText = c => `${c[0]}<span class="${RED[c[1]] ? 'red' : ''}">${SUIT[c[1
 const handText = h => `<span class="ct">${cardText(h.slice(0, 2))}${cardText(h.slice(2))}</span>`;
 const cardFace = (c, size) => `<span class="cd ${size} ${RED[c[1]] ? 'red' : ''}"><span>${c[0]}</span><span class="s">${SUIT[c[1]]}</span></span>`;
 const pct = x => (100 * x).toFixed(1) + '%';
+const chips = x => (Math.abs(x) < 0.005 ? 0 : x).toFixed(2);
 const combos = n => `${n} combo${n === 1 ? '' : 's'}`;
 const short = a => (a.kind === 'allin' ? 'all-in' : a.kind);
 const seat = p => G.seats[p];
@@ -310,6 +329,33 @@ function mix(node, idx, reaches) {
   return { total, share: total / idx.length, freq };
 }
 
+// How likely each of the actor's combos is to be here: their own reach times the opponent's reach
+// given that combo (card removal). EVs are averaged with these weights.
+const evWeights = (node, reaches) => reaches.map((r, i) => r * node.oppReach[i]);
+
+// Weighted mean of one row of EVs over a set of combos; null when none of them carries weight.
+// A combo's EV is null only where the opponent's reach, and so its weight, is 0.
+function evMean(row, idx, w) {
+  const total = idx.reduce((s, i) => s + w[i], 0);
+  return total > 0 ? idx.reduce((s, i) => s + (w[i] > 0 ? w[i] * row[i] : 0), 0) / total : null;
+}
+
+// Every cell's EV here, and the span of the colour scale, which always includes 0.
+function evCells(node, reaches) {
+  const w = evWeights(node, reaches);
+  const cell = {};
+  for (const cls in CELLS) cell[cls] = evMean(node.ev, CELLS[cls], w);
+  const vals = Object.values(cell).filter(v => v !== null);
+  return { cell, any: vals.length > 0, lo: Math.min(0, ...vals), hi: Math.max(0, ...vals) };
+}
+
+// Why there's no EV to show for `what` (combos, or the whole range when left out).
+function noEv(node, what) {
+  const opp = seat(1 - node.player).name, name = seat(node.player).name;
+  if (!node.oppReach.some(x => x > 0)) return `No EV here: ${opp} never gets to this point in the solve.`;
+  return `No EV: ${opp} never gets here when ${name} holds ${what || 'the hands in its range here'}.`;
+}
+
 function whyOut(cls, i, actor) {
   const name = seat(actor).name;
   const what = CELLS[cls].length === 1 ? handText(G.hands[i]) : cls;
@@ -332,6 +378,11 @@ function setGame(key) {
   Object.assign(state, { game: key, path: [], hover: null, combo: null, sel: G.defaultCell in CELLS ? G.defaultCell : Object.keys(CELLS)[0] });
   document.getElementById('games').innerHTML = DATA.order.map(k =>
     `<button type="button" data-game="${k}" aria-pressed="${k === key}">${DATA.games[k].switch}</button>`).join('');
+  const hasEv = 'ev' in G.nodes[G.root];
+  if (!hasEv) state.view = 'strategy';
+  const evTab = document.querySelector('#tabs [data-view="ev"]');
+  evTab.disabled = !hasEv;
+  evTab.title = hasEv ? '' : "No EV for mock data: this spot isn't a solve";
   document.getElementById('spot').innerHTML =
     `<span>${G.deck}</span><span class="dot">·</span><span>Flop</span><span class="ct">${G.board.map(cardText).join(' ')}</span>` +
     `<span class="dot">·</span><span>${G.rules}</span>`;
@@ -370,6 +421,12 @@ function renderGrid(node, reaches) {
   grid.style.setProperty('--n', n);
   grid.classList.toggle('dense', n > 4 && n <= 8);
   grid.classList.toggle('xdense', n > 8);
+  const ev = state.view === 'ev' ? evCells(node, reaches) : null;
+  if (ev) {
+    document.getElementById('legend').innerHTML = ev.any
+      ? `<span class="label">EV</span><span class="mono">${chips(ev.lo)}</span><span class="ramp"></span><span class="mono">${chips(ev.hi)}</span><span>chips</span>`
+      : `<span class="label">No EV at this point</span>`;
+  }
   let html = '';
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
@@ -381,13 +438,28 @@ function renderGrid(node, reaches) {
       }
       const m = mix(node, idx, reaches);
       const live = m.total > 0;
+      const what = idx.length === 1 ? handText(G.hands[idx[0]]) : `<span>${combos(idx.length)}</span>`;
+      const sel = state.sel === cls;
+      if (ev) {
+        const v = ev.cell[cls];
+        if (v === null) {
+          html += `<button type="button" class="cell out${sel ? ' sel' : ''}" data-cell="${cls}" aria-label="${cls}, ${live ? 'no EV here' : 'not in range'}" aria-pressed="${sel}">` +
+            `<span class="lab">${cls}</span><span class="sub">${what}<span class="pc mono">${live ? 'no EV' : 'out'}</span></span></button>`;
+          continue;
+        }
+        const t = ev.hi > ev.lo ? (v - ev.lo) / (ev.hi - ev.lo) : 0;
+        const ink = t >= 0.65 ? ' lab-on sub-on' : '';  // white text from here up; dark text reads better below in the light theme
+        html += `<button type="button" class="cell${sel ? ' sel' : ''}${ink}" data-cell="${cls}" aria-label="${cls}, EV ${chips(v)} chips" aria-pressed="${sel}"` +
+          ` style="background:color-mix(in oklab, var(--heat) ${(12 + 88 * t).toFixed(1)}%, var(--empty))">` +
+          `<span class="lab">${cls}</span><span class="sub">${what}<span class="pc mono">${chips(v)}</span></span></button>`;
+        continue;
+      }
       const top = ord.reduce((t, a) => (m.freq[a] > m.freq[t] ? a : t), ord[0]);
       const height = live ? (state.scale ? 100 * m.share : 100) : 0;
       const segs = live ? ord.map(a => `<i style="flex-basis:${100 * m.freq[a]}%;background:${cols[a]}"></i>`).join('') : '';
       const label = live ? `${cls}, ${ord.map(a => `${node.actions[a].label} ${pct(m.freq[a])}`).join(', ')}` : `${cls}, not in range`;
-      const what = idx.length === 1 ? handText(G.hands[idx[0]]) : `<span>${combos(idx.length)}</span>`;
       const ink = `${height >= 78 ? ' lab-on' : ''}${height >= 22 ? ' sub-on' : ''}`;  // text sits on the fill, not the empty cell
-      html += `<button type="button" class="cell${live ? '' : ' out'}${state.sel === cls ? ' sel' : ''}${ink}" data-cell="${cls}" aria-label="${label}" aria-pressed="${state.sel === cls}">` +
+      html += `<button type="button" class="cell${live ? '' : ' out'}${sel ? ' sel' : ''}${ink}" data-cell="${cls}" aria-label="${label}" aria-pressed="${sel}">` +
         `<span class="fill" style="height:${height}%">${segs}</span><span class="lab">${cls}</span>` +
         `<span class="sub">${what}<span class="pc mono">${live ? Math.round(100 * m.freq[top]) + '% ' + short(node.actions[top]) : 'out'}</span></span></button>`;
     }
@@ -429,6 +501,13 @@ function renderSummary(node, reaches) {
   document.getElementById('sum-count').textContent = `${m.total.toFixed(m.total < 100 ? 2 : 0)} of ${G.hands.length} combos`;
   document.getElementById('sum-labels').innerHTML = ord.map(a => `<span style="--c:${cols[a]}">${node.actions[a].label}<b>${pct(m.freq[a])}</b></span>`).join('');
   document.getElementById('sum-bar').innerHTML = ord.map(a => `<i style="flex-basis:${100 * m.freq[a]}%;background:${cols[a]}"></i>`).join('');
+  const sumEv = document.getElementById('sum-ev');
+  sumEv.hidden = state.view !== 'ev';
+  if (state.view === 'ev') {
+    const v = evMean(node.ev, ALL, evWeights(node, reaches));
+    sumEv.innerHTML = v !== null ? `EV <b class="mono">${chips(v)}</b> chips, averaged over the range`
+      : m.total > 0 ? noEv(node) : `No EV: ${seat(node.player).name}'s range is empty here.`;
+  }
 }
 
 function renderDetail(node, reaches, cls, combo) {
@@ -437,13 +516,25 @@ function renderDetail(node, reaches, cls, combo) {
   const ord = order(node), cols = colors(node);
   const m = mix(node, idx, reaches);
   const h = G.hands[combo];
+  const ev = state.view === 'ev';
+  const w = ev ? evWeights(node, reaches) : null;
   let body;
   if (m.total > 0) {
     const reachText = idx.length > 1
       ? `In ${name}'s range here: ${pct(m.share)} of its ${combos(idx.length)}.`
       : m.share === 1 ? `Always in ${name}'s range here.` : `In ${name}'s range ${pct(m.share)} of the time.`;
-    body = `<div class="det-reach">${reachText}</div><div class="rows">` +
-      ord.map(a => `<div class="row" style="--c:${cols[a]}"><span class="an">${node.actions[a].label}</span><span class="track"><i style="width:${100 * m.freq[a]}%"></i></span><span class="pct mono">${pct(m.freq[a])}</span></div>`).join('') +
+    body = `<div class="det-reach">${reachText}</div>`;
+    // In the EV view each action also gets its EV: what these combos would make by taking it.
+    const v = ev ? evMean(node.ev, idx, w) : null;
+    const evCol = v !== null;
+    if (ev) {
+      body += `<div class="ev-line">${evCol ? `<b>${chips(v)}</b>chips EV here`
+        : `<span>${noEv(node, idx.length === 1 ? handText(G.hands[idx[0]]) : cls)}</span>`}</div>`;
+    }
+    body += `<div class="rows${evCol ? ' ev' : ''}">` +
+      (evCol ? `<div class="row cols"><span></span><span></span><span class="label">Freq</span><span class="label">EV</span></div>` : '') +
+      ord.map(a => `<div class="row" style="--c:${cols[a]}"><span class="an">${node.actions[a].label}</span><span class="track"><i style="width:${100 * m.freq[a]}%"></i></span><span class="pct mono">${pct(m.freq[a])}</span>` +
+        `${evCol ? `<span class="evn mono">${chips(evMean(node.actionEv[a], idx, w))}</span>` : ''}</div>`).join('') +
       `</div>`;
   } else {
     body = `<p class="det-empty">${whyOut(cls, idx[0], actor)}</p>`;
@@ -452,7 +543,8 @@ function renderDetail(node, reaches, cls, combo) {
     body += `<div class="label combos-head">Combos</div><div class="combos">${idx.map(i => {
       const r = reaches[i];
       const top = ord.reduce((t, a) => (node.probs[a][i] > node.probs[t][i] ? a : t), ord[0]);
-      const right = r > 0 ? `${Math.round(100 * node.probs[top][i])}% ${short(node.actions[top])}` : 'out';
+      const right = r === 0 ? 'out' : !ev ? `${Math.round(100 * node.probs[top][i])}% ${short(node.actions[top])}`
+        : node.ev[i] === null ? 'no EV' : `EV ${chips(node.ev[i])}`;
       const bar = r > 0 ? ord.map(a => `<i style="flex-basis:${100 * node.probs[a][i]}%;background:${cols[a]}"></i>`).join('') : '';
       return `<button type="button" class="combo${i === combo ? ' on' : ''}${r > 0 ? '' : ' out'}" data-combo="${i}" title="${G.made[i]}; ${r > 0 ? `in range ${pct(r)}` : 'out of range here'}">` +
         `<span class="ctop">${handText(G.hands[i])}<span>${right}</span></span><span class="bar">${bar}</span></button>`;
@@ -481,6 +573,12 @@ function render() {
   const r = reaches();
   document.getElementById('grid-who').textContent = `${seat(node.player).name} · ${seat(node.player).long}`;
   document.getElementById('grid-count').textContent = `Pot ${node.pot}`;
+  const ev = state.view === 'ev';
+  for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-pressed', b.dataset.view === state.view);
+  document.getElementById('scale-toggle').hidden = ev;
+  document.getElementById('legend').hidden = !ev;
+  document.getElementById('note-strategy').hidden = ev;
+  document.getElementById('note-ev').hidden = !ev;
   renderLine();
   renderGrid(node, r);
   renderSummary(node, r);
@@ -501,6 +599,10 @@ document.getElementById('line').addEventListener('click', e => {
 document.getElementById('back').addEventListener('click', () => go(state.path.slice(0, -1)));
 document.getElementById('reset').addEventListener('click', () => go([]));
 document.getElementById('scale').addEventListener('change', e => { state.scale = e.target.checked; render(); });
+document.getElementById('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-view]');
+  if (b && b.dataset.view !== state.view) { state.view = b.dataset.view; render(); }
+});
 document.getElementById('detail').addEventListener('click', e => {
   const b = e.target.closest('.combo');
   if (!b) return;
