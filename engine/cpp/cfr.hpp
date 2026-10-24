@@ -65,6 +65,13 @@ public:
     std::vector<double> average(int node) const;
     void iterate(int iterations);
 
+    // Expected chips per hand for `player` when both play the average strategy.
+    double value(int player) const;
+    // Expected chips per hand for `player` best-responding to the other's average strategy.
+    double best_response(int player) const;
+    // Mean gain of the two best responses: OpenSpiel's definition for two-player zero-sum games.
+    double exploitability() const;
+
 private:
     int build_tree(const std::string& seq, int player, std::array<int, 2> contrib);
     // Each hand's column divided by its total; uniform where the total is zero.
@@ -73,6 +80,10 @@ private:
     std::vector<double> terminal(const Child& end, int player, const std::vector<double>& opp_reach) const;
     std::vector<double> cfr(const Child& at, int player, const std::vector<double>& own,
                             const std::vector<double>& opp);
+    // `player`'s counterfactual values when both play the average strategy, or when `player`
+    // best-responds to the other's average strategy (`best`).
+    std::vector<double> evaluate(const Child& at, int player, const std::vector<double>& opp, bool best) const;
+    double expected(int player, bool best) const;
 
     Spot spot_;
     std::vector<std::string> hands_;

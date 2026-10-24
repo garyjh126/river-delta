@@ -103,7 +103,9 @@ CHECKPOINTS = (*range(1, 11), 30, 100, 300, 1000, 3000, 5000)
 @pytest.mark.parametrize("method", Solver.METHODS)
 @pytest.mark.parametrize("game", GAMES)
 def test_same_iterates(game, method):
-    """Same algorithm, same iterates, bit for bit."""
+    """Same algorithm, same iterates: average strategies bit for bit. Values, best responses and
+    exploitability within 1e-12 chips per hand (at most 9e-15 seen): numpy adds up the final sum over
+    hands in a different order."""
     py, cpp = InOrder(SPOTS[game], method), cpp_solver(SPOTS[game], method)
     for checkpoint in (c for c in CHECKPOINTS if c <= SPOTS[game].iterations):
         py.iterate(checkpoint - py.iterations)
@@ -111,3 +113,7 @@ def test_same_iterates(game, method):
         assert cpp.iterations == checkpoint
         for i, node in enumerate(cpp.nodes):
             assert np.array_equal(cpp.average(i), py.average(py.by_seq[node.seq])), (checkpoint, node.seq)
+        for player in (0, 1):
+            assert cpp.value(player) == pytest.approx(py.value(player), abs=1e-12)
+            assert cpp.best_response(player) == pytest.approx(py.best_response(player), abs=1e-12)
+        assert cpp.exploitability() == pytest.approx(py.exploitability(), abs=1e-12)

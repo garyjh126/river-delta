@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace cfr {
@@ -245,5 +246,49 @@ void Solver::iterate(int iterations) {
         }
     }
 }
+
+std::vector<double> Solver::evaluate(const Child& at, int player, const std::vector<double>& opp,
+                                     bool best) const {
+    if (at.node < 0) {
+        return terminal(at, player, opp);
+    }
+    const Node& node = nodes_[at.node];
+    const std::vector<double> sigma = average(at.node);
+    if (node.player != player) {
+        std::vector<double> total(n_, 0.0), reach(n_);
+        for (size_t a = 0; a < node.actions.size(); ++a) {
+            for (int h = 0; h < n_; ++h) {
+                reach[h] = opp[h] * sigma[a * n_ + h];
+            }
+            const std::vector<double> v = evaluate(node.children[a], player, reach, best);
+            for (int h = 0; h < n_; ++h) {
+                total[h] += v[h];
+            }
+        }
+        return total;
+    }
+    std::vector<double> out(n_, best ? -std::numeric_limits<double>::infinity() : 0.0);
+    for (size_t a = 0; a < node.actions.size(); ++a) {
+        const std::vector<double> v = evaluate(node.children[a], player, opp, best);
+        for (int h = 0; h < n_; ++h) {
+            out[h] = best ? std::max(out[h], v[h]) : out[h] + sigma[a * n_ + h] * v[h];
+        }
+    }
+    return out;
+}
+
+double Solver::expected(int player, bool best) const {
+    double total = 0;
+    for (double v : evaluate(Child{0}, player, std::vector<double>(n_, 1.0), best)) {
+        total += v;
+    }
+    return deal_prob_ * total;
+}
+
+double Solver::value(int player) const { return expected(player, false); }
+
+double Solver::best_response(int player) const { return expected(player, true); }
+
+double Solver::exploitability() const { return (best_response(0) + best_response(1)) / 2; }
 
 }  // namespace cfr

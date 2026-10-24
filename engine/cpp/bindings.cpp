@@ -57,5 +57,8 @@ PYBIND11_MODULE(cfr_cpp, m) {
         .def("iterate", &cfr::Solver::iterate, py::arg("iterations"))
         .def("average", [](const cfr::Solver& s, int node) {
             return matrix(s.average(node), s.nodes().at(node).actions.size(), s.hands().size());
-        }, py::arg("node"));
+        }, py::arg("node"))
+        .def("value", &cfr::Solver::value, py::arg("player"))
+        .def("best_response", &cfr::Solver::best_response, py::arg("player"))
+        .def("exploitability", &cfr::Solver::exploitability);
 }
