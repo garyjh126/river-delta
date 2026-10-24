@@ -18,7 +18,7 @@ in the module's docstring.
 uv run python engine/cfr.py mini c1 c1_nl      # discounted CFR -> build/<game>.engine.json
 uv run python engine/cfr.py c1 --method cfr+   # CFR+ instead
 uv run python scripts/bench_engine.py          # CFR+ against discounted CFR on C1, limit and no-limit
-uv run pytest                                  # ~1.5 min: the engine against OpenSpiel, and the hand evaluator
+uv run pytest                                  # ~2 min: the engine against OpenSpiel, the C++ engine against it, the hand evaluator
 ```
 
 It is checked against OpenSpiel, an independent implementation of the same games, in both betting
@@ -46,6 +46,46 @@ Discounted CFR is the default because it converges faster on these games. From
 
 Both cost the same per iteration. The lead is not universal: on Mini, CFR+ is slightly ahead after
 5,000 iterations (1.6e-05 against 2.2e-05, from `engine/cfr.py mini` with each method).
+
+## The C++ engine
+
+`engine/cpp/` is the same engine in C++, step for step: the same method, with no new features (the
+EVs and the viewer's export stay in Python). It is a Python module built with pybind11;
+`engine/native.py` builds it with CMake and Ninja when a source has changed, then imports it. It
+needs CMake, Ninja and a C++20 compiler.
+
+```python
+from engine.cfr import SPOTS
+from engine.native import solver
+
+s = solver(SPOTS["c1"], "dcfr")   # same games and methods as engine/cfr.py
+s.iterate(1000)
+s.exploitability()                # 1.296e-05 chips/hand
+```
+
+The Python engine is its answer key. `tests/test_cpp.py` checks, on all four games: the same hands,
+betting tree and showdown results; the same hand ranking on 92,504 five-card hands; and, for both
+CFR+ and discounted CFR, the same average strategy bit for bit after each of the first 10
+iterations and at checkpoints up to each game's full count, with the same values, best responses
+and exploitability to within 1e-12 chips per hand. Bit for bit takes one change, made in the test:
+the Python engine's matrix products add up left to right, as the C++ engine's do, instead of in the
+order numpy's BLAS library picks. Mini no-limit is sensitive to that order: with discounted CFR, two
+orders end 5,000 iterations at different near-equilibrium strategies (exploitability 1.1e-05
+against 1.5e-05, same game value).
+
+Speed, from `scripts/bench_cpp.py` (one thread each, ten times each game's own iteration count;
+both methods take the same time):
+
+| game | iterations | Python | C++ | C++ is faster by |
+|---|---:|---:|---:|---:|
+| Mini | 50,000 | 6.0 s | 0.15 s | 39x |
+| C1 | 10,000 | 2.5 s | 1.3 s | 2x |
+| C1 no-limit | 10,000 | 5.8 s | 3.0 s | 2x |
+
+On C1, most of the time goes into products over every pair of hands (210 x 210), which numpy
+already runs as compiled code, so C++ only removes Python's overhead around them. Making those
+cheaper takes a different method, such as showdowns over hands sorted by strength (Johanson et al.
+2011), not a different language.
 
 ## The viewer
 
