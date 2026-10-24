@@ -89,6 +89,7 @@ private:
     std::vector<std::string> hands_;
     int n_ = 0;
     std::vector<double> compatible_, showdown_;
+    std::vector<double> compatible_columns_, showdown_columns_;  // the same, column by column
     double deal_prob_ = 0;  // every hand leaves the same number of opponent hands
     std::vector<Node> nodes_;
     bool dcfr_ = false;

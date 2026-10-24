@@ -11,16 +11,27 @@ namespace cfr {
 
 namespace {
 
-// out[i] = sum over j of m[i * n + j] * v[j]
-std::vector<double> times(const std::vector<double>& m, const std::vector<double>& v) {
+// out[i] = sum over j of m[i][j] * v[j], from `columns`, which holds m[i][j] at [j * n + i]. Going
+// a column at a time adds each out[i]'s terms left to right, as tests/test_cpp.py does, and the
+// inner loop over i vectorises.
+std::vector<double> times(const std::vector<double>& columns, const std::vector<double>& v) {
     const size_t n = v.size();
-    std::vector<double> out(n);
-    for (size_t i = 0; i < n; ++i) {
-        double sum = 0;
-        for (size_t j = 0; j < n; ++j) {
-            sum += m[i * n + j] * v[j];
+    std::vector<double> out(n, 0.0);
+    for (size_t j = 0; j < n; ++j) {
+        const double* column = columns.data() + j * n;
+        for (size_t i = 0; i < n; ++i) {
+            out[i] += column[i] * v[j];
         }
-        out[i] = sum;
+    }
+    return out;
+}
+
+std::vector<double> transpose(const std::vector<double>& m, size_t n) {
+    std::vector<double> out(n * n);
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            out[j * n + i] = m[i * n + j];
+        }
     }
     return out;
 }
@@ -79,6 +90,8 @@ Solver::Solver(Spot spot, const std::string& method) : spot_(std::move(spot)) {
         opponents += compatible_[j];
     }
     deal_prob_ = 1 / (n_ * opponents);
+    compatible_columns_ = transpose(compatible_, n_);
+    showdown_columns_ = transpose(showdown_, n_);
     build_tree("", 0, {spot_.blind, spot_.blind});
     size_t size = 0;
     for (const auto& node : nodes_) {
@@ -172,10 +185,10 @@ std::vector<double> Solver::terminal(const Child& end, int player, const std::ve
     std::vector<double> out;
     double scale;
     if (end.folder < 0) {
-        out = times(showdown_, opp_reach);
+        out = times(showdown_columns_, opp_reach);
         scale = end.contrib[0];
     } else {
-        out = times(compatible_, opp_reach);
+        out = times(compatible_columns_, opp_reach);
         scale = (end.folder == player ? -1 : 1) * end.contrib[end.folder];
     }
     for (double& x : out) {
