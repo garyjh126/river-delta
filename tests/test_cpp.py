@@ -65,3 +65,49 @@ def test_hand_values_order_like_python():
 
     assert dense(ours) == dense(theirs)
     assert len(set(theirs)) > 5_000  # many distinct values, so the order is a real check
+
+
+def in_order(m: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """m @ v with each row's products added strictly left to right, as the C++ engine adds them."""
+    return np.cumsum(m * v, axis=1)[:, -1]
+
+
+class InOrder(Solver):
+    """The Python engine with its matrix products added left to right, instead of in whatever order
+    the BLAS library chooses. With this, the two engines agree bit for bit. Without it they can't:
+    Mini no-limit is sensitive to the order, and with discounted CFR the two orders' average
+    strategies drift 6e-3 apart by 5,000 iterations."""
+
+    def _terminal(self, node, player, opp_reach):
+        if node.folder is None:
+            return node.contrib[0] * in_order(self.showdown, opp_reach)
+        sign = -1 if node.folder == player else 1
+        return sign * node.contrib[node.folder] * in_order(self.compatible, opp_reach)
+
+
+@pytest.mark.parametrize("method", Solver.METHODS)
+@pytest.mark.parametrize("game", GAMES)
+def test_in_order_is_the_same_engine(game, method):
+    """Adding up in order changes only rounding: early on, before any drift, the strategies agree
+    (within 1e-14 after 10 iterations; C1 no-limit's discounted CFR drifts to 2.5e-12 by 20)."""
+    plain, ordered = Solver(SPOTS[game], method), InOrder(SPOTS[game], method)
+    plain.iterate(10)
+    ordered.iterate(10)
+    assert max(np.abs(plain.average(n) - ordered.average(n)).max() for n in plain.nodes) < 1e-12
+
+
+# Every iteration at first, then spaced out, up to each game's own iteration count.
+CHECKPOINTS = (*range(1, 11), 30, 100, 300, 1000, 3000, 5000)
+
+
+@pytest.mark.parametrize("method", Solver.METHODS)
+@pytest.mark.parametrize("game", GAMES)
+def test_same_iterates(game, method):
+    """Same algorithm, same iterates, bit for bit."""
+    py, cpp = InOrder(SPOTS[game], method), cpp_solver(SPOTS[game], method)
+    for checkpoint in (c for c in CHECKPOINTS if c <= SPOTS[game].iterations):
+        py.iterate(checkpoint - py.iterations)
+        cpp.iterate(checkpoint - cpp.iterations)
+        assert cpp.iterations == checkpoint
+        for i, node in enumerate(cpp.nodes):
+            assert np.array_equal(cpp.average(i), py.average(py.by_seq[node.seq])), (checkpoint, node.seq)

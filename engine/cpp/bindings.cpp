@@ -43,7 +43,7 @@ PYBIND11_MODULE(cfr_cpp, m) {
         .def_readonly("children", &cfr::Node::children);
 
     py::class_<cfr::Solver>(m, "Solver")
-        .def(py::init<cfr::Spot>(), py::arg("spot"))
+        .def(py::init<cfr::Spot, std::string>(), py::arg("spot"), py::arg("method") = "cfr+")
         .def_property_readonly("hands", &cfr::Solver::hands)
         .def_property_readonly("nodes", &cfr::Solver::nodes)
         .def_property_readonly("compatible", [](const cfr::Solver& s) {
@@ -52,5 +52,10 @@ PYBIND11_MODULE(cfr_cpp, m) {
         .def_property_readonly("showdown", [](const cfr::Solver& s) {
             return matrix(s.showdown(), s.hands().size(), s.hands().size());
         })
-        .def_property_readonly("deal_prob", &cfr::Solver::deal_prob);
+        .def_property_readonly("deal_prob", &cfr::Solver::deal_prob)
+        .def_property_readonly("iterations", &cfr::Solver::iterations)
+        .def("iterate", &cfr::Solver::iterate, py::arg("iterations"))
+        .def("average", [](const cfr::Solver& s, int node) {
+            return matrix(s.average(node), s.nodes().at(node).actions.size(), s.hands().size());
+        }, py::arg("node"));
 }

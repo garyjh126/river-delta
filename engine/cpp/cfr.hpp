@@ -39,9 +39,15 @@ struct Node {
     std::vector<Child> children;  // one per action
 };
 
+// CFR with alternating updates (Zinkevich et al. 2007) over the public tree, with a vector over
+// every hand at each node (Johanson et al. 2011), in one of two variants:
+//   cfr+   regret matching+ and an average weighted by iteration t (Tammelin 2014)
+//   dcfr   discounted CFR (Brown and Sandholm 2019): positive regrets times t^1.5 / (t^1.5 + 1)
+//          and negative ones times 1/2 after each update, and the average weighted by t^2
+// Strategies are (actions x hands) row-major: entry [a * n + h] is hand h's chance of action a.
 class Solver {
 public:
-    explicit Solver(Spot spot);
+    explicit Solver(Spot spot, const std::string& method = "cfr+");
 
     const Spot& spot() const { return spot_; }
     const std::vector<std::string>& hands() const { return hands_; }
@@ -51,9 +57,22 @@ public:
     // showdown[i * n + j]: +1 if hand i beats hand j, -1 if it loses, 0 for a tie or a clash.
     const std::vector<double>& showdown() const { return showdown_; }
     double deal_prob() const { return deal_prob_; }
+    int iterations() const { return iterations_; }
+
+    // Regret matching. CFR+ keeps regrets at zero or above already.
+    std::vector<double> current(int node) const;
+    // The average strategy, which is what converges to equilibrium.
+    std::vector<double> average(int node) const;
+    void iterate(int iterations);
 
 private:
     int build_tree(const std::string& seq, int player, std::array<int, 2> contrib);
+    // Each hand's column divided by its total; uniform where the total is zero.
+    std::vector<double> normalise(std::vector<double> weights) const;
+    // Counterfactual value of each of `player`'s hands (chance probability left out).
+    std::vector<double> terminal(const Child& end, int player, const std::vector<double>& opp_reach) const;
+    std::vector<double> cfr(const Child& at, int player, const std::vector<double>& own,
+                            const std::vector<double>& opp);
 
     Spot spot_;
     std::vector<std::string> hands_;
@@ -61,6 +80,10 @@ private:
     std::vector<double> compatible_, showdown_;
     double deal_prob_ = 0;  // every hand leaves the same number of opponent hands
     std::vector<Node> nodes_;
+    bool dcfr_ = false;
+    std::vector<size_t> offset_;  // where each node's rows start in regret_ and strategy_sum_
+    std::vector<double> regret_, strategy_sum_;
+    int iterations_ = 0;
 };
 
 // Every two-card hand left once the board is out, in engine/cfr.py's order.

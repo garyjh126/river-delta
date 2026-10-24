@@ -30,9 +30,9 @@ def load():
     return importlib.import_module("cfr_cpp")
 
 
-def solver(spot):
+def solver(spot, method: str = "cfr+"):
     """A C++ solver for an engine.cfr.Spot."""
     cpp = load()
     return cpp.Solver(cpp.Spot(ranks=spot.ranks, suits=spot.suits, board=list(spot.board), blind=spot.blind,
                                bet=spot.bet, max_raises=spot.max_raises, stack=spot.stack,
-                               pot_sizes=list(spot.pot_sizes)))
+                               pot_sizes=list(spot.pot_sizes)), method)
