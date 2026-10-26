@@ -120,6 +120,30 @@ and `scripts/solve_reference.py c1` (~30 min).
 `build/viewer.artifact.html` is the same page without the document wrapper, for publishing as a
 claude.ai artifact.
 
+## Stepping through CFR
+
+Two ways to watch the C++ engine work, both on Mini.
+
+**The replay page.** `Solver::trace` runs iterations like `iterate` and records every step of
+every walk down the betting tree: reaching a decision node, ending the hand, and leaving the node
+with its values and updated regrets. `viewer/replay.py` records a run and builds a page that steps
+through it like a debugger: step, step over, step out, continue to breakpoints set on the tree,
+a call stack, and a table of every hand's reach, strategy, values and regrets at each step.
+`tests/test_cpp.py` checks that a recorded run ends where an unrecorded one does, with the Python
+engine's regrets bit for bit.
+
+```bash
+uv run python viewer/replay.py                             # Mini, CFR+, 10 iterations -> build/replay.html
+uv run python viewer/replay.py --iterations 30 --method dcfr
+```
+
+**A debugger.** `engine/cpp/debug_main.cpp` builds `cfr_debug`, which solves one game from the
+command line (`cfr_debug [game] [iterations] [method]`). The `debug` preset in
+`engine/cpp/CMakePresets.json` builds it without optimisation into `build/cpp-debug`
+(`cmake --preset debug && cmake --build --preset debug`, run in `engine/cpp`). In VS Code, the
+"C++ engine: Mini, 1 iteration" launch configuration builds it and runs it under LLDB (CodeLLDB
+extension).
+
 ## Licence
 
 Not chosen yet. Until it is, all rights are reserved.
