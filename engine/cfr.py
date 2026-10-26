@@ -7,7 +7,8 @@ implementation (tests/test_cfr.py).
 How it works. The betting is walked as a public tree, one node per betting sequence, and each
 node carries a vector over every private hand instead of one node per deal (Johanson et al.
 2011). Cards enter only at the terminal nodes, through matrices over pairs of hands that zero out
-pairs sharing a card. Regrets follow CFR (Zinkevich et al. 2007) with alternating updates, in
+pairs sharing a card. Each player's starting range weights the hands it is dealt: it is the
+reach that player's hands start the tree with. Regrets follow CFR (Zinkevich et al. 2007) with alternating updates, in
 one of two variants:
 
   cfr+   regret matching+ and an average weighted by iteration t (Tammelin 2014; Tammelin et
@@ -44,6 +45,7 @@ import numpy as np
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from engine.cards import value
+from engine.ranges import weights
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,9 @@ class Spot:
     Limit (`stack` unset): every bet or raise is `bet` chips, and at most `max_raises` are made.
     No-limit (`stack` set): each player starts with `stack` chips and may bet or raise by each of
     `pot_sizes` (fractions of the pot after calling) while that stays below the stack, or go all-in.
+
+    `ranges` holds each player's starting range as range text (engine/ranges.py), or is unset for
+    every hand at weight 1.
     """
 
     ranks: str
@@ -66,6 +71,7 @@ class Spot:
     max_raises: int = 2
     stack: int | None = None
     pot_sizes: tuple[float, ...] = (1.0,)
+    ranges: tuple[str, str] | None = None
 
     @property
     def nolimit(self) -> bool:
@@ -74,6 +80,8 @@ class Spot:
     @property
     def openspiel(self) -> str:
         """The same game as an OpenSpiel `universal_poker` string, for cross-checks."""
+        if self.ranges:
+            raise ValueError("OpenSpiel's universal_poker deals every hand alike, so it has no ranges")
         cards = (f"numSuits={len(self.suits)},numRanks={len(self.ranks)},numHoleCards=2,"
                  f"numBoardCards={len(self.board)} 0,boardCards={''.join(self.board)}")
         common = f"numPlayers=2,numRounds=1,blind={self.blind} {self.blind},"
@@ -171,8 +179,11 @@ class Solver:
         r = np.array([rank[v] for v in strength])
         # showdown[i, j]: +1 if hand i beats hand j, -1 if it loses, 0 for a tie or a clash.
         self.showdown = np.sign(r[:, None] - r[None, :]) * self.compatible
-        # Every hand leaves the same number of opponent hands, so each deal has this probability.
-        self.deal_prob = 1 / (n * self.compatible[0].sum())
+        # ranges[p, i]: player p's weight on hand i, the reach its hands start the tree with.
+        self.ranges = np.array([weights(r, self.hands) for r in spot.ranges]) if spot.ranges else np.ones((2, n))
+        # Deal (i, j), hand i to player 0 and j to player 1, has probability ranges[0, i] * ranges[1, j] * deal_prob
+        # when the two share no card.
+        self.deal_prob = 1 / (self.ranges[0] @ self.compatible @ self.ranges[1])
         self.root = build_tree(spot)
         self.nodes = []
         stack = [self.root]
@@ -225,11 +236,10 @@ class Solver:
         return v
 
     def iterate(self, iterations: int) -> None:
-        n = len(self.hands)
         for _ in range(iterations):
             self.iterations += 1
             for player in (0, 1):
-                self._cfr(self.root, player, np.ones(n), np.ones(n))
+                self._cfr(self.root, player, self.ranges[player], self.ranges[1 - player])
 
     def _evaluate(self, node, player: int, opp: np.ndarray, best: bool, record: dict | None = None) -> np.ndarray:
         """`player`'s counterfactual values when both play the average strategy, or when
@@ -245,13 +255,17 @@ class Solver:
             record[node.seq] = values, self.compatible @ opp
         return values.max(axis=0) if best else (sigma * values).sum(axis=0)
 
+    def _expected(self, player: int, best: bool) -> float:
+        values = self._evaluate(self.root, player, self.ranges[1 - player], best)
+        return self.deal_prob * (self.ranges[player] * values).sum()
+
     def value(self, player: int) -> float:
         """Expected chips per hand for `player` when both play the average strategy."""
-        return self.deal_prob * self._evaluate(self.root, player, np.ones(len(self.hands)), False).sum()
+        return self._expected(player, False)
 
     def best_response(self, player: int) -> float:
         """Expected chips per hand for `player` best-responding to the other's average strategy."""
-        return self.deal_prob * self._evaluate(self.root, player, np.ones(len(self.hands)), True).sum()
+        return self._expected(player, True)
 
     def exploitability(self) -> float:
         """Mean gain of the two best responses: OpenSpiel's definition for two-player zero-sum games."""
@@ -259,7 +273,7 @@ class Solver:
 
     def evs(self) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         """Per decision node: the acting player's EV for each action and hand (actions x hands), and
-        the chance that the opponent's range reaches the node given each hand.
+        the chance that the opponent reaches the node given each hand (from its starting range).
 
         EV is expected chips given the hand and the node, with both playing the average strategy.
         The blinds count as dead money: EV is the chips won from the pot minus the chips put in
@@ -268,10 +282,15 @@ class Solver:
         when their EVs are averaged (card removal)."""
         record = {}
         for player in (0, 1):
-            self._evaluate(self.root, player, np.ones(len(self.hands)), False, record)
-        dealt = self.compatible[0].sum()  # opponent hands left by any one hand
-        return {seq: (values / np.where(mass > 0, mass, np.nan) + self.spot.blind, mass / dealt)
-                for seq, (values, mass) in record.items()}
+            self._evaluate(self.root, player, self.ranges[1 - player], False, record)
+        # The opponent's starting range, given each of the player's hands.
+        dealt = [self.compatible @ self.ranges[1 - player] for player in (0, 1)]
+        out = {}
+        for seq, (values, mass) in record.items():
+            start = dealt[self.by_seq[seq].player]
+            out[seq] = (values / np.where(mass > 0, mass, np.nan) + self.spot.blind,
+                        np.divide(mass, start, out=np.zeros_like(mass), where=start > 0))
+        return out
 
     def export(self) -> dict:
         """The average strategy as the viewer's tree: per node its actions (with labels and where

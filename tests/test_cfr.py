@@ -1,5 +1,7 @@
 """The vector CFR engine against OpenSpiel, an independent implementation of the same games."""
 
+import dataclasses
+import itertools
 import random
 import re
 
@@ -9,7 +11,7 @@ import pytest
 from open_spiel.python.algorithms import discounted_cfr
 
 from engine.cards import RANKS
-from engine.cfr import SPOTS, Solver, Spot
+from engine.cfr import SPOTS, Solver, Spot, Terminal
 
 ACTION_ID = {"fold": 0, "check": 1, "call": 1, "bet": 2, "raise": 2, "allin": 3}
 
@@ -209,6 +211,63 @@ def test_evs_add_up():
             assert np.all((fold_ev == 0) | np.isnan(fold_ev))
             folds += 1
     assert folds > 0
+
+
+def walk_deals(solver: Solver) -> tuple[float, dict]:
+    """The vector engine's sums done the slow way: every deal one at a time, both players following
+    the average strategy. Returns player 0's expected chips, each deal weighted by the two starting
+    ranges, and per (node, hand of the player acting there): the opponent's chance of being there,
+    summed over its hands and weighted by its range, and the same times the chips after each action."""
+    w, average, table = solver.ranges, {node.seq: solver.average(node) for node in solver.nodes}, {}
+
+    def walk(node, hands, opp_reach):  # player 0's expected chips from here; opp_reach[p]: p's opponent's chance
+        if isinstance(node, Terminal):
+            if node.folder is None:
+                return node.contrib[0] * solver.showdown[hands]
+            return node.contrib[node.folder] * (1 if node.folder else -1)
+        p = node.player
+        sigma = average[node.seq][:, hands[p]]
+        entry = table.setdefault((node.seq, hands[p]), [0.0, np.zeros(len(node.actions))])
+        weight = w[1 - p, hands[1 - p]] * opp_reach[p]
+        entry[0] += weight
+        value = 0.0
+        for a, child in enumerate(node.children):
+            reach = list(opp_reach)
+            reach[1 - p] *= sigma[a]
+            chips = walk(child, hands, reach)
+            entry[1][a] += weight * (chips if p == 0 else -chips)
+            value += sigma[a] * chips
+        return value
+
+    total = 0.0
+    for i, j in itertools.product(range(len(solver.hands)), repeat=2):
+        if solver.compatible[i, j]:
+            total += w[0, i] * w[1, j] * solver.deal_prob * walk(solver.root, (i, j), [1.0, 1.0])
+    return total, table
+
+
+@pytest.mark.parametrize("game", ["mini", "mini_nl", "c1_river"])
+def test_ranges_match_a_walk_over_every_deal(game):
+    """With random starting ranges (a random weight on most hands, the rest left out), the engine's
+    values, EVs and opponent reaches equal a walk over every deal."""
+    rng = random.Random(1)
+    hands = Solver(SPOTS[game]).hands
+    ranges = tuple(", ".join(f"{h}:{rng.random():.3f}" for h in hands if rng.random() < 0.8) for _ in range(2))
+    solver = Solver(dataclasses.replace(SPOTS[game], ranges=ranges), method="dcfr")
+    assert 0 < (solver.ranges == 0).sum() < solver.ranges.size
+    solver.iterate(100)
+    value, table = walk_deals(solver)
+    assert solver.value(0) == pytest.approx(value, abs=1e-12)
+    assert solver.value(1) == pytest.approx(-value, abs=1e-12)
+    evs = solver.evs()
+    for (seq, i), (weight, totals) in table.items():
+        action_ev, opp_reach = evs[seq]
+        player = solver.by_seq[seq].player
+        assert opp_reach[i] == pytest.approx(weight / (solver.compatible[i] @ solver.ranges[1 - player]), abs=1e-12)
+        if weight > 0:
+            assert action_ev[:, i] == pytest.approx(totals / weight + solver.spot.blind, abs=1e-9)
+        else:
+            assert np.all(np.isnan(action_ev[:, i]))
 
 
 def test_ev_is_undefined_where_the_opponent_never_reaches():
