@@ -39,6 +39,22 @@ struct Node {
     std::vector<Child> children;  // one per action
 };
 
+// One step of an iteration, recorded by Solver::trace for replaying a run (viewer/replay.py).
+// Vectors are over hands; (actions x hands) ones are row-major, as strategies are.
+struct Step {
+    enum class Kind { visit, end, update };  // reach a decision node, end the hand, leave the node
+    Kind kind = Kind::visit;
+    int iteration = 0;
+    int player = 0;  // the player whose regrets this pass updates
+    int node = 0;  // the decision node; at an end, the node whose action ended the hand
+    int action = -1;  // at an end: that action
+    std::vector<double> own, opp;  // reach of the updating player's hands and the opponent's, here
+    std::vector<double> strategy;  // visit and update: the current strategy at the node
+    std::vector<double> values;  // end: each hand's value; update: each action's (actions x hands)
+    std::vector<double> value;  // update: the node's value, the strategy's mix of the actions' values
+    std::vector<double> regret, strategy_sum;  // update at the player's own node: after the update
+};
+
 // CFR with alternating updates (Zinkevich et al. 2007) over the public tree, with a vector over
 // every hand at each node (Johanson et al. 2011), in one of two variants:
 //   cfr+   regret matching+ and an average weighted by iteration t (Tammelin 2014)
@@ -64,6 +80,8 @@ public:
     // The average strategy, which is what converges to equilibrium.
     std::vector<double> average(int node) const;
     void iterate(int iterations);
+    // Runs `iterations` more iterations, as iterate does, and returns every step they took.
+    std::vector<Step> trace(int iterations);
 
     // Expected chips per hand for `player` when both play the average strategy.
     double value(int player) const;
@@ -96,6 +114,7 @@ private:
     std::vector<size_t> offset_;  // where each node's rows start in regret_ and strategy_sum_
     std::vector<double> regret_, strategy_sum_;
     int iterations_ = 0;
+    std::vector<Step>* steps_ = nullptr;  // where cfr() records its steps while trace() runs
 };
 
 // Every two-card hand left once the board is out, in engine/cfr.py's order.

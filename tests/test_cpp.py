@@ -117,3 +117,21 @@ def test_same_iterates(game, method):
             assert cpp.value(player) == pytest.approx(py.value(player), abs=1e-12)
             assert cpp.best_response(player) == pytest.approx(py.best_response(player), abs=1e-12)
         assert cpp.exploitability() == pytest.approx(py.exploitability(), abs=1e-12)
+
+
+@pytest.mark.parametrize("method", Solver.METHODS)
+@pytest.mark.parametrize("game", GAMES)
+def test_trace_is_the_same_run(game, method):
+    """A traced run (the replay page's) ends where an untraced one does, and the regrets it records
+    last at each node are the Python engine's, bit for bit."""
+    traced, plain, py = cpp_solver(SPOTS[game], method), cpp_solver(SPOTS[game], method), InOrder(SPOTS[game], method)
+    steps = traced.trace(10)
+    plain.iterate(10)
+    py.iterate(10)
+    for i in range(len(traced.nodes)):
+        assert np.array_equal(traced.average(i), plain.average(i))
+    last = {s.node: s.regret for s in steps if s.kind.name == "update" and s.regret}
+    assert len(last) == len(traced.nodes)
+    for i, regret in last.items():
+        node = traced.nodes[i]
+        assert np.array_equal(np.reshape(regret, (len(node.actions), -1)), py.regret[node.seq]), node.seq

@@ -205,9 +205,14 @@ std::vector<double> Solver::cfr(const Child& at, int player, const std::vector<d
     const Node& node = nodes_[at.node];
     const size_t actions = node.actions.size();
     const std::vector<double> sigma = current(at.node);
+    if (steps_) {
+        steps_->push_back({.kind = Step::Kind::visit, .iteration = iterations_, .player = player, .node = at.node,
+                           .own = own, .opp = opp, .strategy = sigma});
+    }
     std::vector<double> reach(n_);
     if (node.player != player) {
         std::vector<double> total(n_, 0.0);
+        std::vector<double> values;  // kept for the trace only
         for (size_t a = 0; a < actions; ++a) {
             for (int h = 0; h < n_; ++h) {
                 reach[h] = opp[h] * sigma[a * n_ + h];
@@ -216,6 +221,19 @@ std::vector<double> Solver::cfr(const Child& at, int player, const std::vector<d
             for (int h = 0; h < n_; ++h) {
                 total[h] += v[h];
             }
+            if (steps_) {
+                if (node.children[a].node < 0) {
+                    steps_->push_back({.kind = Step::Kind::end, .iteration = iterations_, .player = player,
+                                       .node = at.node, .action = static_cast<int>(a), .own = own, .opp = reach,
+                                       .values = v});
+                }
+                values.insert(values.end(), v.begin(), v.end());
+            }
+        }
+        if (steps_) {
+            steps_->push_back({.kind = Step::Kind::update, .iteration = iterations_, .player = player,
+                               .node = at.node, .own = own, .opp = opp, .strategy = sigma, .values = values,
+                               .value = total});
         }
         return total;
     }
@@ -226,6 +244,10 @@ std::vector<double> Solver::cfr(const Child& at, int player, const std::vector<d
         }
         const std::vector<double> v = cfr(node.children[a], player, reach, opp);
         std::copy(v.begin(), v.end(), values.begin() + a * n_);
+        if (steps_ && node.children[a].node < 0) {
+            steps_->push_back({.kind = Step::Kind::end, .iteration = iterations_, .player = player, .node = at.node,
+                               .action = static_cast<int>(a), .own = reach, .opp = opp, .values = v});
+        }
     }
     std::vector<double> v(n_, 0.0);
     for (size_t a = 0; a < actions; ++a) {
@@ -247,6 +269,13 @@ std::vector<double> Solver::cfr(const Child& at, int player, const std::vector<d
             strategy_sum[k] += weight * own[h] * sigma[k];
         }
     }
+    if (steps_) {
+        const size_t size = actions * n_;
+        steps_->push_back({.kind = Step::Kind::update, .iteration = iterations_, .player = player, .node = at.node,
+                           .own = own, .opp = opp, .strategy = sigma, .values = values, .value = v,
+                           .regret = std::vector<double>(regret, regret + size),
+                           .strategy_sum = std::vector<double>(strategy_sum, strategy_sum + size)});
+    }
     return v;
 }
 
@@ -258,6 +287,14 @@ void Solver::iterate(int iterations) {
             cfr(Child{0}, player, ones, ones);
         }
     }
+}
+
+std::vector<Step> Solver::trace(int iterations) {
+    std::vector<Step> steps;
+    steps_ = &steps;
+    iterate(iterations);
+    steps_ = nullptr;
+    return steps;
 }
 
 std::vector<double> Solver::evaluate(const Child& at, int player, const std::vector<double>& opp,

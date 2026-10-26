@@ -42,6 +42,24 @@ PYBIND11_MODULE(cfr_cpp, m) {
         .def_readonly("actions", &cfr::Node::actions)
         .def_readonly("children", &cfr::Node::children);
 
+    py::class_<cfr::Step> step(m, "Step");
+    py::enum_<cfr::Step::Kind>(step, "Kind")
+        .value("visit", cfr::Step::Kind::visit)
+        .value("end", cfr::Step::Kind::end)
+        .value("update", cfr::Step::Kind::update);
+    step.def_readonly("kind", &cfr::Step::kind)
+        .def_readonly("iteration", &cfr::Step::iteration)
+        .def_readonly("player", &cfr::Step::player)
+        .def_readonly("node", &cfr::Step::node)
+        .def_readonly("action", &cfr::Step::action)
+        .def_readonly("own", &cfr::Step::own)
+        .def_readonly("opp", &cfr::Step::opp)
+        .def_readonly("strategy", &cfr::Step::strategy)
+        .def_readonly("values", &cfr::Step::values)
+        .def_readonly("value", &cfr::Step::value)
+        .def_readonly("regret", &cfr::Step::regret)
+        .def_readonly("strategy_sum", &cfr::Step::strategy_sum);
+
     py::class_<cfr::Solver>(m, "Solver")
         .def(py::init<cfr::Spot, std::string>(), py::arg("spot"), py::arg("method") = "cfr+")
         .def_property_readonly("hands", &cfr::Solver::hands)
@@ -55,6 +73,7 @@ PYBIND11_MODULE(cfr_cpp, m) {
         .def_property_readonly("deal_prob", &cfr::Solver::deal_prob)
         .def_property_readonly("iterations", &cfr::Solver::iterations)
         .def("iterate", &cfr::Solver::iterate, py::arg("iterations"))
+        .def("trace", &cfr::Solver::trace, py::arg("iterations"))
         .def("average", [](const cfr::Solver& s, int node) {
             return matrix(s.average(node), s.nodes().at(node).actions.size(), s.hands().size());
         }, py::arg("node"))
