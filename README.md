@@ -19,13 +19,13 @@ in the module's docstring.
 uv run python engine/cfr.py mini c1 c1_nl      # discounted CFR -> build/<game>.engine.json
 uv run python engine/cfr.py c1 --method cfr+   # CFR+ instead
 uv run python scripts/bench_engine.py          # CFR+ against discounted CFR on C1, limit and no-limit
-uv run pytest                                  # ~2 min: the engine against OpenSpiel, the C++ engine against it, the hand evaluator
+uv run pytest                                  # ~3 min: the engine against OpenSpiel, the C++ engine against it, the hand evaluator
 ```
 
 It is checked against OpenSpiel, an independent implementation of the same games, in both betting
 types: the same infostates and showdown results, the same iterates as OpenSpiel's CFR+ and
 discounted CFR, and the same exploitability for our strategy whether our best response or
-OpenSpiel's computes it. On C1 it runs 1,000 iterations in a fraction of a second; OpenSpiel's
+OpenSpiel's computes it. On C1 it runs 1,000 iterations in about 1.4 seconds; OpenSpiel's
 CFR+ takes about half an hour for the same 1,000 (`scripts/solve_reference.py` prints its timings).
 
 Discounted CFR is the default because it converges faster on these games. From
@@ -43,10 +43,11 @@ Discounted CFR is the default because it converges faster on these games. From
 | 100 iterations | 1.53e-02 | 3.43e-03 |
 | 300 iterations | 3.01e-03 | 5.74e-04 |
 | 1,000 iterations | 5.12e-04 | 9.78e-05 |
-| 3,000 iterations | 9.90e-05 | 2.78e-05 |
+| 3,000 iterations | 9.90e-05 | 1.17e-04 |
 
-Both cost the same per iteration. The lead is not universal: on Mini, CFR+ is slightly ahead after
-5,000 iterations (1.6e-05 against 2.2e-05, from `engine/cfr.py mini` with each method).
+Both cost the same per iteration. The lead is not steady: on C1 no-limit, discounted CFR's
+exploitability rises between 2,000 and 3,000 iterations and ends behind CFR+'s at 3,000. On Mini it
+leads after 5,000 iterations (1.1e-05 against 3.1e-05, from `engine/cfr.py mini` with each method).
 
 ## The C++ engine
 
@@ -100,6 +101,41 @@ went into products over every pair of its 210 hands) and 19 times faster on a fu
 (0.15 s before). The Python engine got 4 to 5 times slower: numpy makes the same pass as a dozen
 small array operations, twice for the counts, where one product over pairs of hands was a single
 compiled call. It is the answer key, not the engine to run.
+
+## A full-deck river
+
+`SPOTS["river"]` in `engine/cfr.py` is a river on the full 52-card deck, there to change at will:
+the big blind against the button in a single-raised pot, after the big blind called a bet on the
+flop and one on the turn. The board is K♠8♦4♣2♥7♠, with 20 big blinds in the pot and 80 behind each,
+and bets and raises of a third, three quarters and one and a half pots, plus all-in: 1,081 hands and
+60 decision nodes. Each player's starting range is range text (`engine/ranges.py`: items such as
+`TT+`, `A2s+`, `KQo:0.5`, `AhKh`), written by hand to fit that line. Nothing solved the flop and
+turn to make them, so they are for illustration.
+
+```bash
+uv run python engine/cfr.py river --engine c++   # ~3 s -> build/river.engine.json
+uv run python scripts/check_river.py            # ~10 s; fetches and builds noambrown/poker_solver into build/ the first time
+```
+
+`--engine c++` iterates with the C++ engine, then hands its average strategy to the Python engine
+for the EVs and the export. `scripts/check_river.py` checks the spot against noambrown/poker_solver
+(MIT), an independent river solver: it builds the same tree, every action and amount the same, and
+our best response puts its strategy's exploitability where its own does, which checks our hand
+ranking, card removal, ranges, payoffs and best response against an outside implementation. Bet
+sizes round halves up, as poker_solver rounds them, so that the trees match. From the script, 1,000
+iterations of discounted CFR each, on one thread:
+
+| | poker_solver | ours |
+|---|---:|---:|
+| exploitability by poker_solver's best response (chips) | 0.001742 | |
+| exploitability by our best response (chips) | 0.001742 | 0.002001 |
+| the same, % of the pot | 0.0087% | 0.0100% |
+| value to the big blind (chips) | -0.704113 | -0.704279 |
+| seconds | 1.36 | 2.26 |
+
+poker_solver's time includes reading the spot and building its tree, and it is built with
+`-ffast-math -march=native`. Its discounted CFR discounts before each update rather than after, so
+the two runs differ even in exact arithmetic.
 
 ## The viewer
 

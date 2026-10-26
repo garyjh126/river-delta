@@ -22,8 +22,10 @@ def with_random_ranges(spot, seed: int = 1):
     return dataclasses.replace(spot, ranges=ranges)
 
 
-CASES = {**SPOTS, "c1_river_ranges": with_random_ranges(SPOTS["c1_river"])}
-GAMES = ["mini", "c1", "mini_nl", "c1_nl", "c1_river", "c1_river_ranges"]
+# The full-deck river only to 30 iterations: the Python engine takes 0.1 s for each.
+CASES = {**SPOTS, "c1_river_ranges": with_random_ranges(SPOTS["c1_river"]),
+         "river": dataclasses.replace(SPOTS["river"], iterations=30)}
+GAMES = ["mini", "c1", "mini_nl", "c1_nl", "c1_river", "c1_river_ranges", "river"]
 
 
 def py_tree(solver: Solver) -> dict:

@@ -146,8 +146,8 @@ int Solver::build_tree(const std::string& seq, int player, std::array<int, 2> co
         }
     } else {
         for (double size : spot_.pot_sizes) {
-            // nearbyint rounds halves to even, as Python's round does.
-            const int to = contrib[opp] + static_cast<int>(std::nearbyint(size * 2 * contrib[opp]));
+            // Halves round up, as engine/cfr.py rounds them.
+            const int to = contrib[opp] + static_cast<int>(std::floor(size * 2 * contrib[opp] + 0.5));
             if (to < *spot_.stack) {
                 raise_to(to, kind);
             }

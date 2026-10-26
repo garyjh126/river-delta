@@ -2,7 +2,8 @@
 
 Our solver's engine. It solves the Mini and C1 games, in limit and no-limit versions, and C1 on a
 river, which OpenSpiel can also solve, so every result is checked against an independent
-implementation (tests/test_cfr.py).
+implementation (tests/test_cfr.py). It also solves a full-deck river with ranges and several bet
+sizes, which scripts/check_river.py checks against noambrown/poker_solver.
 
 How it works. The betting is walked as a public tree, one node per betting sequence, and each
 node carries a vector over every private hand instead of one node per deal (Johanson et al.
@@ -32,21 +33,23 @@ References
     Minimization. AAAI 2019. arXiv:1809.04040.
 
     uv run python engine/cfr.py mini c1 c1_nl     # writes build/<game>.engine.json
+    uv run python engine/cfr.py river --engine c++
 """
 
 import argparse
 import itertools
 import json
+import math
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from engine.cards import value
+from engine.cards import RANKS, value
 from engine.ranges import weights
 
 
@@ -58,7 +61,9 @@ class Spot:
 
     Limit (`stack` unset): every bet or raise is `bet` chips, and at most `max_raises` are made.
     No-limit (`stack` set): each player starts with `stack` chips and may bet or raise by each of
-    `pot_sizes` (fractions of the pot after calling) while that stays below the stack, or go all-in.
+    `pot_sizes` (fractions of the pot after calling, rounded to whole chips with halves rounded up)
+    while that stays below the stack, or go all-in. On a later street, `blind` is half the pot and
+    `stack` adds the chips behind.
 
     `ranges` holds each player's starting range as range text (engine/ranges.py), or is unset for
     every hand at weight 1.
@@ -105,6 +110,20 @@ SPOTS = {
     "c1_nl": Spot(**C1, iterations=1000, stack=20),
     # C1's deck on a river where hands run from two pair through straights and flushes to four of a kind.
     "c1_river": Spot(ranks="234567", suits="cdhs", board=("2c", "4c", "5d", "7c", "7h"), iterations=1000),
+    # A full-deck river, to change at will. The big blind (player 0) against the button in a
+    # single-raised pot: the button bet the flop and the turn, and the big blind called both. 20 big
+    # blinds in the pot, 80 behind each, bets and raises of a third, three quarters and one and a half
+    # pots, and all-in. No flush is possible on this board, so the ranges ignore suits. They are
+    # written by hand to fit that line, for illustration: no solve of the flop and turn made them.
+    "river": Spot(ranks=RANKS, suits="cdhs", board=("Ks", "8d", "4c", "2h", "7s"), iterations=1000, blind=10,
+                  stack=90, pot_sizes=(0.33, 0.75, 1.5), ranges=(
+                      "KJ, KT, K9, KQo, KQs:0.5, K7s, K6s, K5s, K3s, K8s:0.5, K4s:0.5, K2s:0.5, K8o:0.5, K7o:0.5, "
+                      "A8s:0.5, A8o:0.5, 98s:0.5, 87s, T8s:0.5, J8s:0.25, Q8s:0.25, 88:0.5, 44:0.5, 22:0.5, "
+                      "77:0.3, 99:0.5, TT:0.5, JJ:0.5, 65s, 65o:0.5, 53s, 53o:0.25, 63s:0.5, A5s, A3s, 76s:0.5, "
+                      "75s:0.5",
+                      "AA, KK, QQ:0.5, JJ:0.25, 88, 44, 22, 77:0.25, AK, KQ, KJ, KT, K9s, K8s, K7s, K4s, K2s, "
+                      "K6s:0.5, K5s:0.5, 65s, 53s, A5s, A3s, 63s:0.5, 76s:0.5, QJs:0.5, QTs:0.5, JTs:0.5, "
+                      "T9s:0.5, 96s:0.25, AQ:0.25, AJ:0.25")),
 }
 
 
@@ -147,7 +166,8 @@ def build_tree(spot: Spot, seq: str = "", player: int = 0, contrib: tuple[int, i
             raise_to(contrib[opp] + spot.bet, kind)
     else:
         for size in spot.pot_sizes:
-            to = contrib[opp] + round(size * 2 * contrib[opp])
+            # Halves round up, as noambrown/poker_solver rounds them, so both build the same tree.
+            to = contrib[opp] + math.floor(size * 2 * contrib[opp] + 0.5)
             if to < spot.stack:
                 raise_to(to, kind)
         if contrib[opp] < spot.stack:
@@ -395,7 +415,7 @@ class Solver:
                 "actionEv": [chips(row) for row in action_ev],
                 "oppReach": [float(x) for x in opp_reach],
             }
-        return {"hands": self.hands, "root": "root", "nodes": nodes}
+        return {"hands": self.hands, "ranges": self.ranges.tolist(), "root": "root", "nodes": nodes}
 
 
 def main():
@@ -404,22 +424,35 @@ def main():
     ap.add_argument("--method", choices=Solver.METHODS, default="dcfr",
                     help="default dcfr: it converges faster here (scripts/bench_engine.py)")
     ap.add_argument("--iterations", type=int, help="default: the game's own count (as in the OpenSpiel reference solves)")
+    ap.add_argument("--engine", choices=("python", "c++"), default="python",
+                    help="c++: iterate with the C++ engine (engine/cpp), then take its average strategy here")
     args = ap.parse_args()
     for key in args.games:
         spot = SPOTS[key]
         iterations = args.iterations or spot.iterations
         solver = Solver(spot, args.method)
+        if args.engine == "c++":
+            from engine.native import solver as cpp_solver  # imported here: engine.native imports this module
+            cpp = cpp_solver(spot, args.method)
         start = time.time()
-        solver.iterate(iterations)
+        (cpp if args.engine == "c++" else solver).iterate(iterations)
         seconds = time.time() - start
+        if args.engine == "c++":  # its average strategy, for the EVs and the export
+            for i, node in enumerate(cpp.nodes):
+                solver.strategy_sum[node.seq] = cpp.average(i)
         expl = solver.exploitability()
-        print(f"{key}: {args.method}, {iterations} iterations in {seconds:.1f} s, exploitability {expl:.3g} chips/hand, "
-              f"P1 value {solver.value(0):+.6f}", file=sys.stderr)
+        print(f"{key}: {args.method}, {iterations} iterations in {seconds:.1f} s ({args.engine}), exploitability "
+              f"{expl:.3g} chips/hand ({100 * expl / (2 * spot.blind):.3f}% of the pot), P1 value {solver.value(0):+.6f}",
+              file=sys.stderr)
+        try:
+            load = spot.openspiel
+        except ValueError:
+            load = None
         out = Path(__file__).resolve().parent.parent / "build" / f"{key}.engine.json"
         out.parent.mkdir(exist_ok=True)
-        out.write_text(json.dumps({"method": args.method, "load": spot.openspiel, "nolimit": spot.nolimit,
-                                   "stack": spot.stack, "iterations": iterations, "seconds": round(seconds, 1),
-                                   "exploitability": expl, "tree": solver.export()}))
+        out.write_text(json.dumps({"method": args.method, "engine": args.engine, "spot": asdict(spot),
+                                   "load": load, "nolimit": spot.nolimit, "stack": spot.stack, "iterations": iterations,
+                                   "seconds": round(seconds, 1), "exploitability": expl, "tree": solver.export()}))
 
 
 if __name__ == "__main__":

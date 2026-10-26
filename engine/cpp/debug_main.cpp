@@ -9,7 +9,7 @@
 #include <string>
 
 int main(int argc, char** argv) {
-    // The same games as engine/cfr.py's SPOTS.
+    // engine/cfr.py's SPOTS, but for the full-deck river, whose ranges are read in Python.
     const cfr::Spot mini{"2345", "cd", {"3c", "4d", "5c"}};
     const cfr::Spot c1{"234567", "cdhs", {"5c", "6d", "7h"}};
     const cfr::Spot c1_river{"234567", "cdhs", {"2c", "4c", "5d", "7c", "7h"}};
