@@ -1,4 +1,4 @@
-// Vector-form CFR for heads-up poker with one betting round on a fixed flop: a port of
+// Vector-form CFR for heads-up poker with one betting round on a fixed board: a port of
 // engine/cfr.py, which stays the answer key (tests/test_cpp.py). Same method, same references.
 #pragma once
 
@@ -9,8 +9,8 @@
 
 namespace cfr {
 
-// One betting round on a fixed flop, as engine/cfr.py's Spot. Both players post `blind` and
-// player 0 acts first. Limit when `stack` is unset, no-limit when it is set.
+// One betting round on a fixed board (a flop or a river), as engine/cfr.py's Spot. Both players
+// post `blind` and player 0 acts first. Limit when `stack` is unset, no-limit when it is set.
 struct Spot {
     std::string ranks;
     std::string suits;
@@ -20,6 +20,9 @@ struct Spot {
     int max_raises = 2;
     std::optional<int> stack;
     std::vector<double> pot_sizes = {1.0};
+    // Each player's starting range, as a weight on every hand in deal_hands order; empty for every
+    // hand at weight 1.
+    std::vector<std::vector<double>> ranges;
 
     bool nolimit() const { return stack.has_value(); }
 };
@@ -72,6 +75,9 @@ public:
     const std::vector<double>& compatible() const { return compatible_; }
     // showdown[i * n + j]: +1 if hand i beats hand j, -1 if it loses, 0 for a tie or a clash.
     const std::vector<double>& showdown() const { return showdown_; }
+    // ranges()[p][i]: player p's weight on hand i, the reach its hands start the tree with.
+    const std::array<std::vector<double>, 2>& ranges() const { return ranges_; }
+    // Deal (i, j) has probability ranges()[0][i] * ranges()[1][j] * deal_prob() when the two share no card.
     double deal_prob() const { return deal_prob_; }
     int iterations() const { return iterations_; }
 
@@ -108,7 +114,8 @@ private:
     int n_ = 0;
     std::vector<double> compatible_, showdown_;
     std::vector<double> compatible_columns_, showdown_columns_;  // the same, column by column
-    double deal_prob_ = 0;  // every hand leaves the same number of opponent hands
+    std::array<std::vector<double>, 2> ranges_;
+    double deal_prob_ = 0;
     std::vector<Node> nodes_;
     bool dcfr_ = false;
     std::vector<size_t> offset_;  // where each node's rows start in regret_ and strategy_sum_

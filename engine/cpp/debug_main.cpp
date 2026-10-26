@@ -12,12 +12,13 @@ int main(int argc, char** argv) {
     // The same games as engine/cfr.py's SPOTS.
     const cfr::Spot mini{"2345", "cd", {"3c", "4d", "5c"}};
     const cfr::Spot c1{"234567", "cdhs", {"5c", "6d", "7h"}};
+    const cfr::Spot c1_river{"234567", "cdhs", {"2c", "4c", "5d", "7c", "7h"}};
     auto nolimit = [](cfr::Spot spot) {
         spot.stack = 20;
         return spot;
     };
     const std::map<std::string, cfr::Spot> spots = {
-        {"mini", mini}, {"c1", c1}, {"mini_nl", nolimit(mini)}, {"c1_nl", nolimit(c1)}};
+        {"mini", mini}, {"c1", c1}, {"mini_nl", nolimit(mini)}, {"c1_nl", nolimit(c1)}, {"c1_river", c1_river}};
 
     const std::string game = argc > 1 ? argv[1] : "mini";
     const int iterations = argc > 2 ? std::stoi(argv[2]) : 1;

@@ -24,11 +24,12 @@ PYBIND11_MODULE(cfr_cpp, m) {
 
     py::class_<cfr::Spot>(m, "Spot")
         .def(py::init([](std::string ranks, std::string suits, std::vector<std::string> board, int blind,
-                         int bet, int max_raises, std::optional<int> stack, std::vector<double> pot_sizes) {
-                 return cfr::Spot{ranks, suits, board, blind, bet, max_raises, stack, pot_sizes};
+                         int bet, int max_raises, std::optional<int> stack, std::vector<double> pot_sizes,
+                         std::vector<std::vector<double>> ranges) {
+                 return cfr::Spot{ranks, suits, board, blind, bet, max_raises, stack, pot_sizes, ranges};
              }),
              py::kw_only(), py::arg("ranks"), py::arg("suits"), py::arg("board"), py::arg("blind"),
-             py::arg("bet"), py::arg("max_raises"), py::arg("stack"), py::arg("pot_sizes"));
+             py::arg("bet"), py::arg("max_raises"), py::arg("stack"), py::arg("pot_sizes"), py::arg("ranges"));
 
     py::class_<cfr::Child>(m, "Child")
         .def_readonly("node", &cfr::Child::node)
@@ -69,6 +70,11 @@ PYBIND11_MODULE(cfr_cpp, m) {
         })
         .def_property_readonly("showdown", [](const cfr::Solver& s) {
             return matrix(s.showdown(), s.hands().size(), s.hands().size());
+        })
+        .def_property_readonly("ranges", [](const cfr::Solver& s) {
+            std::vector<double> both = s.ranges()[0];
+            both.insert(both.end(), s.ranges()[1].begin(), s.ranges()[1].end());
+            return matrix(both, 2, s.hands().size());
         })
         .def_property_readonly("deal_prob", &cfr::Solver::deal_prob)
         .def_property_readonly("iterations", &cfr::Solver::iterations)

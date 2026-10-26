@@ -1,5 +1,6 @@
 """The C++ engine (engine/cpp) against the Python engine, which is its answer key."""
 
+import dataclasses
 import itertools
 import random
 
@@ -7,11 +8,22 @@ import numpy as np
 import pytest
 
 from engine.cards import value
-from engine.cfr import SPOTS, Node, Solver
+from engine.cfr import SPOTS, Node, Solver, deal_hands
 from engine.native import load
 from engine.native import solver as cpp_solver
 
-GAMES = ["mini", "c1", "mini_nl", "c1_nl"]
+
+
+def with_random_ranges(spot, seed: int = 1):
+    """`spot` with a random weight on most hands for each player, the rest left out."""
+    rng = random.Random(seed)
+    hands = deal_hands(spot)
+    ranges = tuple(", ".join(f"{h}:{rng.random():.3f}" for h in hands if rng.random() < 0.8) for _ in range(2))
+    return dataclasses.replace(spot, ranges=ranges)
+
+
+CASES = {**SPOTS, "c1_river_ranges": with_random_ranges(SPOTS["c1_river"])}
+GAMES = ["mini", "c1", "mini_nl", "c1_nl", "c1_river", "c1_river_ranges"]
 
 
 def py_tree(solver: Solver) -> dict:
@@ -34,7 +46,7 @@ def cpp_tree(solver) -> dict:
 
 @pytest.mark.parametrize("game", GAMES)
 def test_same_hands_and_tree(game):
-    py, cpp = Solver(SPOTS[game]), cpp_solver(SPOTS[game])
+    py, cpp = Solver(CASES[game]), cpp_solver(CASES[game])
     assert cpp.hands == py.hands
     assert cpp.nodes[0].seq == ""
     assert len(cpp.nodes) == len(py.nodes)
@@ -43,19 +55,22 @@ def test_same_hands_and_tree(game):
 
 @pytest.mark.parametrize("game", GAMES)
 def test_same_matrices(game):
-    py, cpp = Solver(SPOTS[game]), cpp_solver(SPOTS[game])
+    py, cpp = Solver(CASES[game]), cpp_solver(CASES[game])
     assert np.array_equal(cpp.compatible, py.compatible)
     assert np.array_equal(cpp.showdown, py.showdown)
-    assert cpp.deal_prob == py.deal_prob
+    assert np.array_equal(cpp.ranges, py.ranges)
+    assert cpp.deal_prob == pytest.approx(py.deal_prob, rel=1e-14)  # numpy adds up the deals in another order
 
 
 def test_hand_values_order_like_python():
-    """Every five-card hand from C1's 24-card deck, plus a fixed sample from the full deck (for aces
-    and the wheel), ranks in the same order under both evaluators."""
+    """Every five-card hand from C1's 24-card deck, plus fixed samples of five and seven cards from the
+    full deck (for aces, the wheel and the best five of seven), ranks in the same order under both
+    evaluators."""
     small = [r + s for r in "234567" for s in "cdhs"]
     full = [r + s for r in "23456789TJQKA" for s in "shdc"]
     rng = random.Random(0)
     hands = [list(h) for h in itertools.combinations(small, 5)] + [rng.sample(full, 5) for _ in range(50_000)]
+    hands += [rng.sample(full, 7) for _ in range(10_000)]
     cpp = load()
     ours = [cpp.hand_value(h) for h in hands]
     theirs = [value(h) for h in hands]
@@ -90,7 +105,7 @@ class InOrder(Solver):
 def test_in_order_is_the_same_engine(game, method):
     """Adding up in order changes only rounding: early on, before any drift, the strategies agree
     (within 1e-14 after 10 iterations; C1 no-limit's discounted CFR drifts to 2.5e-12 by 20)."""
-    plain, ordered = Solver(SPOTS[game], method), InOrder(SPOTS[game], method)
+    plain, ordered = Solver(CASES[game], method), InOrder(CASES[game], method)
     plain.iterate(10)
     ordered.iterate(10)
     assert max(np.abs(plain.average(n) - ordered.average(n)).max() for n in plain.nodes) < 1e-12
@@ -106,8 +121,8 @@ def test_same_iterates(game, method):
     """Same algorithm, same iterates: average strategies bit for bit. Values, best responses and
     exploitability within 1e-12 chips per hand (at most 9e-15 seen): numpy adds up the final sum over
     hands in a different order."""
-    py, cpp = InOrder(SPOTS[game], method), cpp_solver(SPOTS[game], method)
-    for checkpoint in (c for c in CHECKPOINTS if c <= SPOTS[game].iterations):
+    py, cpp = InOrder(CASES[game], method), cpp_solver(CASES[game], method)
+    for checkpoint in (c for c in CHECKPOINTS if c <= CASES[game].iterations):
         py.iterate(checkpoint - py.iterations)
         cpp.iterate(checkpoint - cpp.iterations)
         assert cpp.iterations == checkpoint
@@ -124,7 +139,7 @@ def test_same_iterates(game, method):
 def test_trace_is_the_same_run(game, method):
     """A traced run (the replay page's) ends where an untraced one does, and the regrets it records
     last at each node are the Python engine's, bit for bit."""
-    traced, plain, py = cpp_solver(SPOTS[game], method), cpp_solver(SPOTS[game], method), InOrder(SPOTS[game], method)
+    traced, plain, py = cpp_solver(CASES[game], method), cpp_solver(CASES[game], method), InOrder(CASES[game], method)
     steps = traced.trace(10)
     plain.iterate(10)
     py.iterate(10)

@@ -12,6 +12,9 @@ from pathlib import Path
 
 import pybind11
 
+from engine.cfr import deal_hands
+from engine.ranges import weights
+
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE, BUILD = ROOT / "engine" / "cpp", ROOT / "build" / "cpp"
 
@@ -31,8 +34,9 @@ def load():
 
 
 def solver(spot, method: str = "cfr+"):
-    """A C++ solver for an engine.cfr.Spot."""
+    """A C++ solver for an engine.cfr.Spot. Its range text is read here, into weights over the hands."""
     cpp = load()
+    ranges = [weights(r, deal_hands(spot)).tolist() for r in spot.ranges] if spot.ranges else []
     return cpp.Solver(cpp.Spot(ranks=spot.ranks, suits=spot.suits, board=list(spot.board), blind=spot.blind,
                                bet=spot.bet, max_raises=spot.max_raises, stack=spot.stack,
-                               pot_sizes=list(spot.pot_sizes)), method)
+                               pot_sizes=list(spot.pot_sizes), ranges=ranges), method)

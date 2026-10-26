@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <string_view>
 #include <utility>
 
@@ -35,9 +36,8 @@ int pack(int category, const std::vector<int>& ranks) {
     return v;
 }
 
-}  // namespace
-
-int value(const std::vector<std::string>& cards) {
+// The value of exactly five cards.
+int five(const std::vector<std::string>& cards) {
     std::array<int, 15> count{};
     std::vector<int> ranks;  // high to low
     for (const auto& card : cards) {
@@ -70,6 +70,27 @@ int value(const std::vector<std::string>& cards) {
     if (shape == S{2, 2, 1}) return pack(2, by_group);
     if (shape == S{2, 1, 1, 1}) return pack(1, by_group);
     return pack(0, ranks);
+}
+
+}  // namespace
+
+int value(const std::vector<std::string>& cards) {
+    // Every choice of five: each bit of `chosen` keeps one card.
+    const unsigned n = static_cast<unsigned>(cards.size());
+    int best = 0;
+    std::vector<std::string> pick(5);
+    for (unsigned chosen = 0; chosen < 1u << n; ++chosen) {
+        if (std::popcount(chosen) != 5) {
+            continue;
+        }
+        for (unsigned i = 0, k = 0; i < n; ++i) {
+            if (chosen >> i & 1) {
+                pick[k++] = cards[i];
+            }
+        }
+        best = std::max(best, five(pick));
+    }
+    return best;
 }
 
 }  // namespace cards

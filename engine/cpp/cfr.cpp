@@ -68,10 +68,10 @@ Solver::Solver(Spot spot, const std::string& method) : spot_(std::move(spot)) {
     n_ = static_cast<int>(hands_.size());
     std::vector<int> strength;
     for (const auto& h : hands_) {
-        std::vector<std::string> five = spot_.board;
-        five.push_back(h.substr(0, 2));
-        five.push_back(h.substr(2, 2));
-        strength.push_back(cards::value(five));
+        std::vector<std::string> cards = spot_.board;
+        cards.push_back(h.substr(0, 2));
+        cards.push_back(h.substr(2, 2));
+        strength.push_back(cards::value(cards));
     }
     compatible_.resize(n_ * n_);
     showdown_.resize(n_ * n_);
@@ -85,11 +85,22 @@ Solver::Solver(Spot spot, const std::string& method) : spot_(std::move(spot)) {
             showdown_[i * n_ + j] = sign * compatible_[i * n_ + j];
         }
     }
-    double opponents = 0;
-    for (int j = 0; j < n_; ++j) {
-        opponents += compatible_[j];
+    if (!spot_.ranges.empty() && spot_.ranges.size() != 2) {
+        throw std::invalid_argument("ranges must be empty or hold one range for each player");
     }
-    deal_prob_ = 1 / (n_ * opponents);
+    for (int p : {0, 1}) {
+        ranges_[p] = spot_.ranges.empty() ? std::vector<double>(n_, 1.0) : spot_.ranges[p];
+        if (static_cast<int>(ranges_[p].size()) != n_) {
+            throw std::invalid_argument("each range must hold one weight per hand");
+        }
+    }
+    double deals = 0;
+    for (int i = 0; i < n_; ++i) {
+        for (int j = 0; j < n_; ++j) {
+            deals += ranges_[0][i] * compatible_[i * n_ + j] * ranges_[1][j];
+        }
+    }
+    deal_prob_ = 1 / deals;
     compatible_columns_ = transpose(compatible_, n_);
     showdown_columns_ = transpose(showdown_, n_);
     build_tree("", 0, {spot_.blind, spot_.blind});
@@ -280,11 +291,10 @@ std::vector<double> Solver::cfr(const Child& at, int player, const std::vector<d
 }
 
 void Solver::iterate(int iterations) {
-    const std::vector<double> ones(n_, 1.0);
     for (int i = 0; i < iterations; ++i) {
         ++iterations_;
         for (int player : {0, 1}) {
-            cfr(Child{0}, player, ones, ones);
+            cfr(Child{0}, player, ranges_[player], ranges_[1 - player]);
         }
     }
 }
@@ -328,9 +338,10 @@ std::vector<double> Solver::evaluate(const Child& at, int player, const std::vec
 }
 
 double Solver::expected(int player, bool best) const {
+    const std::vector<double> v = evaluate(Child{0}, player, ranges_[1 - player], best);
     double total = 0;
-    for (double v : evaluate(Child{0}, player, std::vector<double>(n_, 1.0), best)) {
-        total += v;
+    for (int h = 0; h < n_; ++h) {
+        total += ranges_[player][h] * v[h];
     }
     return deal_prob_ * total;
 }
