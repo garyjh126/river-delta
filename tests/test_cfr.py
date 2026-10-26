@@ -1,5 +1,6 @@
 """The vector CFR engine against OpenSpiel, an independent implementation of the same games."""
 
+import random
 import re
 
 import numpy as np
@@ -7,7 +8,8 @@ import pyspiel
 import pytest
 from open_spiel.python.algorithms import discounted_cfr
 
-from engine.cfr import SPOTS, Solver
+from engine.cards import RANKS
+from engine.cfr import SPOTS, Solver, Spot
 
 ACTION_ID = {"fold": 0, "check": 1, "call": 1, "bet": 2, "raise": 2, "allin": 3}
 
@@ -40,7 +42,7 @@ def cfr_plus_table(game: str, iterations: int = 0) -> dict:
     return spiel.tabular_average_policy().policy_table()
 
 
-GAMES = ["mini", "c1", "mini_nl", "c1_nl"]
+GAMES = ["mini", "c1", "mini_nl", "c1_nl", "c1_river"]
 
 
 @pytest.mark.parametrize("game", GAMES)
@@ -51,10 +53,19 @@ def test_same_infostates_as_openspiel(game):
     as_openspiel(solver, {k: [a for a, _ in v] for k, v in table.items()})  # same actions everywhere
 
 
-def test_showdowns_match_openspiel():
-    """Who wins each Mini deal at showdown after check-check, against OpenSpiel's hand evaluator."""
-    solver = Solver(SPOTS["mini"])
-    game = pyspiel.load_game(SPOTS["mini"].openspiel)
+def check_showdown(solver: Solver, state) -> None:
+    """At a dealt state: check, check, and OpenSpiel's winner is ours."""
+    hands = [solver.index[info(state.information_state_string(p))[1]] for p in (0, 1)]
+    for _ in range(2):
+        state = state.child(1)  # check, check
+    assert state.returns()[0] == solver.showdown[hands[0], hands[1]]  # each player has 1 in the pot
+
+
+@pytest.mark.parametrize("game, deals", [("mini", 5 * 4 * 3 * 2), ("c1_river", 19 * 18 * 17 * 16)])
+def test_showdowns_match_openspiel(game, deals):
+    """Who wins each deal at showdown after check-check, against OpenSpiel's hand evaluator: every
+    ordered deal of four cards from those left (on the river, the best five of seven)."""
+    solver = Solver(SPOTS[game])
     checked = 0
 
     def walk(state):
@@ -63,17 +74,27 @@ def test_showdowns_match_openspiel():
             for a, _ in state.chance_outcomes():
                 walk(state.child(a))
             return
-        hands = [solver.index[info(state.information_state_string(p))[1]] for p in (0, 1)]
-        for _ in range(2):
-            state = state.child(1)  # check, check
-        assert state.returns()[0] == solver.showdown[hands[0], hands[1]]  # each player has 1 in the pot
+        check_showdown(solver, state)
         checked += 1
 
-    walk(game.new_initial_state())
-    assert checked == 5 * 4 * 3 * 2  # every ordered deal of four cards from five
+    walk(pyspiel.load_game(SPOTS[game].openspiel).new_initial_state())
+    assert checked == deals
 
 
-@pytest.mark.parametrize("game, iterations", [("mini", 100), ("c1", 3), ("mini_nl", 100), ("c1_nl", 2)])
+def test_full_deck_showdowns_match_openspiel():
+    """The same on a full-deck river, for a sample of 3,000 deals."""
+    spot = Spot(ranks=RANKS, suits="cdhs", board=("Ks", "8d", "4c", "2h", "7s"), iterations=0, stack=20)
+    solver = Solver(spot)
+    game = pyspiel.load_game(spot.openspiel)
+    rng = random.Random(0)
+    for _ in range(3000):
+        state = game.new_initial_state()
+        while state.is_chance_node():
+            state = state.child(rng.choice(state.legal_actions()))
+        check_showdown(solver, state)
+
+
+@pytest.mark.parametrize("game, iterations", [("mini", 100), ("c1", 3), ("mini_nl", 100), ("c1_nl", 2), ("c1_river", 3)])
 def test_cfr_plus_iterates_match_openspiel(game, iterations):
     """Same algorithm, same iterates: our average strategy equals OpenSpiel's CFR+ after as many iterations."""
     theirs = cfr_plus_table(game, iterations)
@@ -103,7 +124,8 @@ def test_dcfr_iterates_match_openspiel(game):
     assert gap < 1e-9
 
 
-@pytest.mark.parametrize("game, iterations", [("mini", 1000), ("c1", 100), ("mini_nl", 1000), ("c1_nl", 50)])
+@pytest.mark.parametrize("game, iterations", [("mini", 1000), ("c1", 100), ("mini_nl", 1000), ("c1_nl", 50),
+                                             ("c1_river", 100)])
 def test_exploitability_matches_openspiel(game, iterations):
     """Our best response and OpenSpiel's give the same exploitability for our strategy."""
     pgame = pyspiel.load_game(SPOTS[game].openspiel)

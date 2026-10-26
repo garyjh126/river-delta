@@ -1,8 +1,8 @@
-"""Vector-form CFR for heads-up poker with one betting round on a fixed flop.
+"""Vector-form CFR for heads-up poker with one betting round on a fixed board: a flop, or a river.
 
-Our solver's engine. It solves the Mini and C1 games, in limit and no-limit versions, which
-OpenSpiel can also solve, so every result is checked against an independent implementation
-(tests/test_cfr.py).
+Our solver's engine. It solves the Mini and C1 games, in limit and no-limit versions, and C1 on a
+river, which OpenSpiel can also solve, so every result is checked against an independent
+implementation (tests/test_cfr.py).
 
 How it works. The betting is walked as a public tree, one node per betting sequence, and each
 node carries a vector over every private hand instead of one node per deal (Johanson et al.
@@ -48,7 +48,9 @@ from engine.cards import value
 
 @dataclass(frozen=True)
 class Spot:
-    """One betting round on a fixed flop. Both players post `blind` and player 0 acts first.
+    """One betting round on a fixed board of three cards (a flop) or five (a river), where hands
+    are the best five of the board and two hole cards. Both players post `blind` and player 0 acts
+    first.
 
     Limit (`stack` unset): every bet or raise is `bet` chips, and at most `max_raises` are made.
     No-limit (`stack` set): each player starts with `stack` chips and may bet or raise by each of
@@ -73,7 +75,7 @@ class Spot:
     def openspiel(self) -> str:
         """The same game as an OpenSpiel `universal_poker` string, for cross-checks."""
         cards = (f"numSuits={len(self.suits)},numRanks={len(self.ranks)},numHoleCards=2,"
-                 f"numBoardCards=3 0,boardCards={''.join(self.board)}")
+                 f"numBoardCards={len(self.board)} 0,boardCards={''.join(self.board)}")
         common = f"numPlayers=2,numRounds=1,blind={self.blind} {self.blind},"
         if not self.nolimit:
             return (f"universal_poker(betting=limit,{common}raiseSize={self.bet} {self.bet},firstPlayer=1 1,"
@@ -91,6 +93,8 @@ SPOTS = {
     "c1": Spot(**C1, iterations=1000),
     "mini_nl": Spot(**MINI, iterations=5000, stack=20),
     "c1_nl": Spot(**C1, iterations=1000, stack=20),
+    # C1's deck on a river where hands run from two pair through straights and flushes to four of a kind.
+    "c1_river": Spot(ranks="234567", suits="cdhs", board=("2c", "4c", "5d", "7c", "7h"), iterations=1000),
 }
 
 

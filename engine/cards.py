@@ -1,5 +1,6 @@
-"""Cards and five-card hands for the viewer's games: two hole cards plus a three-card flop."""
+"""Cards and hands for the viewer's games: two hole cards plus a three-card flop or a five-card river."""
 
+import itertools
 from collections import Counter
 
 RANKS = "23456789TJQKA"
@@ -22,7 +23,14 @@ def _straight_high(ranks: set[int]) -> int:
 
 
 def value(cards: list[str]) -> tuple:
-    """Comparable value of exactly five cards: (category, tie-break ranks...), 0 high card .. 8 straight flush."""
+    """Comparable value of the best five of five to seven cards: (category, tie-break ranks...), 0 high
+    card .. 8 straight flush."""
+    if len(cards) > 5:
+        return max(_five(list(five)) for five in itertools.combinations(cards, 5))
+    return _five(cards)
+
+
+def _five(cards: list[str]) -> tuple:
     ranks = sorted((_rank(c) for c in cards), reverse=True)
     groups = sorted(Counter(ranks).items(), key=lambda kv: (-kv[1], -kv[0]))
     shape = [n for _, n in groups]

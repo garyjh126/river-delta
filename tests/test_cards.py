@@ -37,3 +37,13 @@ def test_describe_and_draws_on_a_flop():
     assert describe(board + ["7h", "6h"], with_draws=True) == "king high, flush draw, gutshot"
     assert draws(["8c", "7d", "6h", "2s", "Kc"]) == []  # three to a straight is no draw
     assert draws(["8c", "7d", "6h", "5s", "Kc"]) == ["open-ended straight draw"]
+
+
+def test_best_five_of_seven():
+    river = ["Ks", "8d", "4c", "2h", "7s"]
+    assert value(river + ["6c", "5d"]) == (4, 8)  # straight, eight high
+    assert value(river + ["Kd", "8c"]) == (2, 13, 8, 7)  # two pair, the river's seven plays
+    assert value(river + ["Ad", "3c"]) == (0, 14, 13, 8, 7, 4)  # the two and three don't play
+    assert value(["9h", "9d", "9c", "2s", "2c", "2d", "Ah"]) == (6, 9, 2)  # the best full house of two
+    assert value(["Ah", "2h", "3h", "4h", "5h", "6h", "7c"]) == (8, 6)  # six high beats the wheel
+    assert describe(river + ["Kd", "8c"]) == "two pair, kings and eights"
