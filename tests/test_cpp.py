@@ -82,35 +82,6 @@ def test_hand_values_order_like_python():
     assert len(set(theirs)) > 5_000  # many distinct values, so the order is a real check
 
 
-def in_order(m: np.ndarray, v: np.ndarray) -> np.ndarray:
-    """m @ v with each row's products added strictly left to right, as the C++ engine adds them."""
-    return np.cumsum(m * v, axis=1)[:, -1]
-
-
-class InOrder(Solver):
-    """The Python engine with its matrix products added left to right, instead of in whatever order
-    the BLAS library chooses. With this, the two engines agree bit for bit. Without it they can't:
-    Mini no-limit is sensitive to the order, and with discounted CFR the two orders' average
-    strategies drift 6e-3 apart by 5,000 iterations."""
-
-    def _terminal(self, node, player, opp_reach):
-        if node.folder is None:
-            return node.contrib[0] * in_order(self.showdown, opp_reach)
-        sign = -1 if node.folder == player else 1
-        return sign * node.contrib[node.folder] * in_order(self.compatible, opp_reach)
-
-
-@pytest.mark.parametrize("method", Solver.METHODS)
-@pytest.mark.parametrize("game", GAMES)
-def test_in_order_is_the_same_engine(game, method):
-    """Adding up in order changes only rounding: early on, before any drift, the strategies agree
-    (within 1e-14 after 10 iterations; C1 no-limit's discounted CFR drifts to 2.5e-12 by 20)."""
-    plain, ordered = Solver(CASES[game], method), InOrder(CASES[game], method)
-    plain.iterate(10)
-    ordered.iterate(10)
-    assert max(np.abs(plain.average(n) - ordered.average(n)).max() for n in plain.nodes) < 1e-12
-
-
 # Every iteration at first, then spaced out, up to each game's own iteration count.
 CHECKPOINTS = (*range(1, 11), 30, 100, 300, 1000, 3000, 5000)
 
@@ -118,10 +89,10 @@ CHECKPOINTS = (*range(1, 11), 30, 100, 300, 1000, 3000, 5000)
 @pytest.mark.parametrize("method", Solver.METHODS)
 @pytest.mark.parametrize("game", GAMES)
 def test_same_iterates(game, method):
-    """Same algorithm, same iterates: average strategies bit for bit. Values, best responses and
-    exploitability within 1e-12 chips per hand (at most 9e-15 seen): numpy adds up the final sum over
-    hands in a different order."""
-    py, cpp = InOrder(CASES[game], method), cpp_solver(CASES[game], method)
+    """Same algorithm, same iterates: average strategies bit for bit, because both engines add up
+    every sum in the same order. Values, best responses and exploitability within 1e-12 chips per
+    hand (at most 9e-15 seen): numpy adds up the final sum over hands in a different order."""
+    py, cpp = Solver(CASES[game], method), cpp_solver(CASES[game], method)
     for checkpoint in (c for c in CHECKPOINTS if c <= CASES[game].iterations):
         py.iterate(checkpoint - py.iterations)
         cpp.iterate(checkpoint - cpp.iterations)
@@ -139,7 +110,7 @@ def test_same_iterates(game, method):
 def test_trace_is_the_same_run(game, method):
     """A traced run (the replay page's) ends where an untraced one does, and the regrets it records
     last at each node are the Python engine's, bit for bit."""
-    traced, plain, py = cpp_solver(CASES[game], method), cpp_solver(CASES[game], method), InOrder(CASES[game], method)
+    traced, plain, py = cpp_solver(CASES[game], method), cpp_solver(CASES[game], method), Solver(CASES[game], method)
     steps = traced.trace(10)
     plain.iterate(10)
     py.iterate(10)

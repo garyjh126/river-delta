@@ -6,10 +6,11 @@ takes each action at every decision, and what each hand and action is worth ther
 
 ## The engine
 
-`engine/cfr.py` solves one-street games on a fixed flop, limit or no-limit. It walks the public
-betting tree once per update and carries a vector over every private hand at each node, instead
-of visiting every deal separately; card removal enters only at the end of the hand, through
-matrices over pairs of hands. It has two update rules, both from published work: CFR+ (Tammelin
+`engine/cfr.py` solves one-street games on a fixed board, a flop or a river, limit or no-limit,
+from each player's starting range. It walks the public betting tree once per update and carries a
+vector over every private hand at each node, instead of visiting every deal separately; card
+removal enters only at the end of the hand, in one pass over the hands sorted by strength
+(Johanson et al. 2011). It has two update rules, both from published work: CFR+ (Tammelin
 2014; Tammelin et al. 2015) and discounted CFR (Brown and Sandholm 2019), on top of CFR
 (Zinkevich et al. 2007) and public-tree best response (Johanson et al. 2011). Full references are
 in the module's docstring.
@@ -63,29 +64,42 @@ s.iterate(1000)
 s.exploitability()                # 1.296e-05 chips/hand
 ```
 
-The Python engine is its answer key. `tests/test_cpp.py` checks, on all four games: the same hands,
-betting tree and showdown results; the same hand ranking on 92,504 five-card hands; and, for both
-CFR+ and discounted CFR, the same average strategy bit for bit after each of the first 10
-iterations and at checkpoints up to each game's full count, with the same values, best responses
-and exploitability to within 1e-12 chips per hand. Bit for bit takes one change, made in the test:
-the Python engine's matrix products add up left to right, as the C++ engine's do, instead of in the
-order numpy's BLAS library picks. Mini no-limit is sensitive to that order: with discounted CFR, two
-orders end 5,000 iterations at different near-equilibrium strategies (exploitability 1.1e-05
-against 1.5e-05, same game value).
+The Python engine is its answer key. `tests/test_cpp.py` checks, on all four games and on C1's
+river with and without random ranges: the same hands, betting tree and showdown results; the same
+hand ranking on 92,504 five-card hands and 10,000 seven-card ones; and, for both CFR+ and
+discounted CFR, the same average strategy bit for bit after each of the first 10 iterations and at
+checkpoints up to each game's full count, with the same values, best responses and exploitability
+to within 1e-12 chips per hand.
+
+Bit for bit holds because both engines add up every sum in the same order. At the end of the hand
+they don't multiply by matrices over pairs of hands: they make one pass over the hands sorted by
+strength and take away the hands that share a card (Johanson et al. 2011), which is O(n) instead
+of O(n²). `tests/test_cfr.py` checks those sums against the matrix products. Taking away can leave
+1e-16 where the true sum is 0, and regret matching turns a regret of 1e-16 into a pure strategy, so
+both engines also count the hands behind each sum and make it exactly 0 where there are none.
+
+The order of a sum matters on Mini: its regrets tie exactly, and CFR+ floors them at 0, so the way
+1e-16 of rounding goes picks a strategy. With discounted CFR, two orders end Mini no-limit's 5,000
+iterations at different near-equilibrium strategies (exploitability 1.1e-05 against 1.5e-05, same
+game value), and on Mini the O(n) sums part from OpenSpiel's iterates within a few iterations. So
+the tests check Mini's iterates against OpenSpiel with the matrix products (a test-only subclass,
+which rounds as OpenSpiel's sums over deals do), and every other game's with the engine itself.
 
 Speed, from `scripts/bench_cpp.py` (one thread each, ten times each game's own iteration count;
 both methods take the same time):
 
 | game | iterations | Python | C++ | C++ is faster by |
 |---|---:|---:|---:|---:|
-| Mini | 50,000 | 6.0 s | 0.15 s | 39x |
-| C1 | 10,000 | 2.5 s | 1.3 s | 2x |
-| C1 no-limit | 10,000 | 5.8 s | 3.0 s | 2x |
+| Mini | 50,000 | 26.4 s | 0.22 s | 122x |
+| C1 | 10,000 | 13.7 s | 0.35 s | 39x |
+| C1 no-limit | 10,000 | 30.3 s | 0.80 s | 38x |
 
-On C1, most of the time goes into products over every pair of hands (210 x 210), which numpy
-already runs as compiled code, so C++ only removes Python's overhead around them. Making those
-cheaper takes a different method, such as showdowns over hands sorted by strength (Johanson et al.
-2011), not a different language.
+The pass over sorted hands made the C++ engine 3.7 times faster on C1 (1.3 s before, when its time
+went into products over every pair of its 210 hands) and 19 times faster on a full-deck river with
+1,081 hands (42 ms an iteration before, 2.2 ms after). Mini, with 10 hands, got a little slower
+(0.15 s before). The Python engine got 4 to 5 times slower: numpy makes the same pass as a dozen
+small array operations, twice for the counts, where one product over pairs of hands was a single
+compiled call. It is the answer key, not the engine to run.
 
 ## The viewer
 

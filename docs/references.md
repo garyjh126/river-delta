@@ -17,9 +17,11 @@ Extensive Games. IJCAI 2011.
 [PDF](https://poker.cs.ualberta.ca/publications/ijcai2011_accelerated_best_response.pdf) ·
 `johanson2011-accelerating-best-response.pdf`
 Walking the public betting tree once with a vector over every hand, which the whole engine does,
-and the best response behind our exploitability. Its section on terminal nodes also shows how to
-settle a showdown in one pass over hands sorted by strength, O(n) instead of O(n²): the next
-speed-up, not yet used.
+and the best response behind our exploitability. Its section on terminal nodes is how the engine
+settles showdowns and folds: one pass over the hands sorted by strength, with the hands that share
+a card taken away by inclusion-exclusion, O(n) instead of O(n²) (`showdown_reach` and
+`compatible_reach` in `engine/cpp/cfr.cpp`, `_showdown_reach` and `_compatible_reach` in
+`engine/cfr.py`).
 
 **Tammelin (2014).** Solving Large Imperfect Information Games Using CFR+.
 [arXiv:1407.5042](https://arxiv.org/abs/1407.5042) · `tammelin2014-cfr-plus.pdf`

@@ -6,10 +6,12 @@ implementation (tests/test_cfr.py).
 
 How it works. The betting is walked as a public tree, one node per betting sequence, and each
 node carries a vector over every private hand instead of one node per deal (Johanson et al.
-2011). Cards enter only at the terminal nodes, through matrices over pairs of hands that zero out
-pairs sharing a card. Each player's starting range weights the hands it is dealt: it is the
-reach that player's hands start the tree with. Regrets follow CFR (Zinkevich et al. 2007) with alternating updates, in
-one of two variants:
+2011). Cards enter only at the terminal nodes, where each hand's value sums over the opponent's
+hands that share no card with it. That takes O(n) per node, not a product with a matrix over
+pairs of hands: a pass over the hands sorted by strength, which takes away the hands that share
+a card by inclusion-exclusion (Johanson et al. 2011 again). Each player's starting range weights
+the hands it is dealt: it is the reach that player's hands start the tree with. Regrets follow
+CFR (Zinkevich et al. 2007) with alternating updates, in one of two variants:
 
   cfr+   regret matching+ and an average weighted by iteration t (Tammelin 2014; Tammelin et
          al. 2015)
@@ -179,6 +181,16 @@ class Solver:
         r = np.array([rank[v] for v in strength])
         # showdown[i, j]: +1 if hand i beats hand j, -1 if it loses, 0 for a tie or a clash.
         self.showdown = np.sign(r[:, None] - r[None, :]) * self.compatible
+        # What the terminal nodes use instead of those two matrices: each hand's two cards, numbered
+        # from 0, and the hands from weakest to strongest, where hands as strong as the one at place k
+        # take places group_start[k] up to group_end[k].
+        deck = {c: k for k, c in enumerate(sorted({c for h in self.hands for c in (h[:2], h[2:])}))}
+        self.cards = np.array([[deck[h[:2]], deck[h[2:]]] for h in self.hands])
+        self.deck_size = len(deck)
+        self.order = np.argsort(r, kind="stable")
+        ranked = r[self.order]
+        self.group_start = np.searchsorted(ranked, ranked, side="left")
+        self.group_end = np.searchsorted(ranked, ranked, side="right")
         # ranges[p, i]: player p's weight on hand i, the reach its hands start the tree with.
         self.ranges = np.array([weights(r, self.hands) for r in spot.ranges]) if spot.ranges else np.ones((2, n))
         # Deal (i, j), hand i to player 0 and j to player 1, has probability ranges[0, i] * ranges[1, j] * deal_prob
@@ -210,12 +222,55 @@ class Solver:
         """The average strategy, which is what converges to equilibrium."""
         return self._normalise(self.strategy_sum[node.seq])
 
+    def _compatible_sums(self, x: np.ndarray) -> np.ndarray:
+        """compatible @ x in O(n): x over every hand, less the hands holding either of each hand's
+        cards. The hand itself holds both, so it was taken away twice: add it back once. Sums go left
+        to right, as the C++ engine's do."""
+        total = np.cumsum(x)[-1]
+        per_card = np.bincount(self.cards.ravel(), np.repeat(x, 2), minlength=self.deck_size)
+        return total - per_card[self.cards[:, 0]] - per_card[self.cards[:, 1]] + x
+
+    def _weaker_stronger_sums(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """For each place in `order`, x (given in that order) over the weaker hands and over the
+        stronger ones, each less the hands holding one of that hand's cards (none holds both). Sums go
+        from the weakest hand up and from the strongest down, as the C++ engine's do."""
+        n, cards = len(x), self.cards[self.order]
+        held = np.zeros((n, self.deck_size))  # held[k, c]: x[k] if the hand at place k holds card c
+        held[np.arange(n), cards[:, 0]] = x
+        held[np.arange(n), cards[:, 1]] = x
+        none = np.zeros((1, self.deck_size))
+        below = np.vstack([none, np.cumsum(held, axis=0)])  # row k: each card's x in the hands below place k
+        above = np.vstack([np.cumsum(held[::-1], axis=0)[::-1], none])  # row k: in the hands at k and above
+        total_below = np.concatenate([[0.0], np.cumsum(x)])
+        total_above = np.concatenate([np.cumsum(x[::-1])[::-1], [0.0]])
+        a, b, start, end = cards[:, 0], cards[:, 1], self.group_start, self.group_end
+        return (total_below[start] - below[start, a] - below[start, b],
+                total_above[end] - above[end, a] - above[end, b])
+
+    # Taking away can leave 1e-16 where the true sum is 0, and regret matching turns a regret of 1e-16
+    # into a pure strategy. So the two sums below count the hands with reach above 0 the same way (in
+    # whole numbers, exactly), and are exactly 0 where there are none.
+
+    def _compatible_reach(self, reach: np.ndarray) -> np.ndarray:
+        """compatible @ reach in O(n) (Johanson et al. 2011): the opponent's reach behind each hand."""
+        return np.where(self._compatible_sums(1.0 * (reach > 0)) > 0, self._compatible_sums(reach), 0.0)
+
+    def _showdown_reach(self, reach: np.ndarray) -> np.ndarray:
+        """showdown @ reach in O(n) (Johanson et al. 2011), from the hands sorted by strength: for each
+        hand, the opponent's reach with weaker hands less its reach with stronger ones."""
+        s = reach[self.order]
+        weaker, stronger = self._weaker_stronger_sums(s)
+        some_weaker, some_stronger = self._weaker_stronger_sums(1.0 * (s > 0))
+        out = np.empty(len(s))
+        out[self.order] = np.where(some_weaker > 0, weaker, 0.0) - np.where(some_stronger > 0, stronger, 0.0)
+        return out
+
     def _terminal(self, node: Terminal, player: int, opp_reach: np.ndarray) -> np.ndarray:
         """Counterfactual value of each of `player`'s hands (chance probability left out)."""
         if node.folder is None:
-            return node.contrib[0] * (self.showdown @ opp_reach)
+            return node.contrib[0] * self._showdown_reach(opp_reach)
         sign = -1 if node.folder == player else 1
-        return sign * node.contrib[node.folder] * (self.compatible @ opp_reach)
+        return sign * node.contrib[node.folder] * self._compatible_reach(opp_reach)
 
     def _cfr(self, node, player: int, own: np.ndarray, opp: np.ndarray) -> np.ndarray:
         if isinstance(node, Terminal):
@@ -252,7 +307,7 @@ class Solver:
             return sum(self._evaluate(c, player, opp * sigma[a], best, record) for a, c in enumerate(node.children))
         values = np.array([self._evaluate(c, player, opp, best, record) for c in node.children])
         if record is not None:
-            record[node.seq] = values, self.compatible @ opp
+            record[node.seq] = values, self._compatible_reach(opp)
         return values.max(axis=0) if best else (sigma * values).sum(axis=0)
 
     def _expected(self, player: int, best: bool) -> float:
@@ -284,7 +339,7 @@ class Solver:
         for player in (0, 1):
             self._evaluate(self.root, player, self.ranges[1 - player], False, record)
         # The opponent's starting range, given each of the player's hands.
-        dealt = [self.compatible @ self.ranges[1 - player] for player in (0, 1)]
+        dealt = [self._compatible_reach(self.ranges[1 - player]) for player in (0, 1)]
         out = {}
         for seq, (values, mass) in record.items():
             start = dealt[self.by_seq[seq].player]

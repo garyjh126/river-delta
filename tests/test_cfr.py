@@ -96,11 +96,30 @@ def test_full_deck_showdowns_match_openspiel():
         check_showdown(solver, state)
 
 
+class MatrixSolver(Solver):
+    """The engine with the matrix products at its terminal nodes, as it had before the O(n) sums."""
+
+    def _terminal(self, node, player, opp_reach):
+        if node.folder is None:
+            return node.contrib[0] * (self.showdown @ opp_reach)
+        sign = -1 if node.folder == player else 1
+        return sign * node.contrib[node.folder] * (self.compatible @ opp_reach)
+
+
+# Mini's regrets tie exactly and CFR+ floors them at 0, so the way 1e-16 of rounding goes picks a
+# strategy. The engine's O(n) sums at terminal nodes round differently from OpenSpiel's sums over
+# deals, and on Mini its iterates part from OpenSpiel's within a few iterations; the matrix
+# products round as OpenSpiel's sums do. So Mini's iterates are checked with them, and every other
+# game's with the engine itself.
+def iterating(game: str):
+    return MatrixSolver if game == "mini" else Solver
+
+
 @pytest.mark.parametrize("game, iterations", [("mini", 100), ("c1", 3), ("mini_nl", 100), ("c1_nl", 2), ("c1_river", 3)])
 def test_cfr_plus_iterates_match_openspiel(game, iterations):
     """Same algorithm, same iterates: our average strategy equals OpenSpiel's CFR+ after as many iterations."""
     theirs = cfr_plus_table(game, iterations)
-    solver = Solver(SPOTS[game])
+    solver = iterating(game)(SPOTS[game])
     solver.iterate(iterations)
     ours = as_openspiel(solver, {k: [a for a, _ in v] for k, v in theirs.items()})
     gap = max(abs(p - q) for key in theirs for (_, p), (_, q) in zip(ours[key], theirs[key]))
@@ -111,7 +130,7 @@ def test_cfr_plus_iterates_match_openspiel(game, iterations):
 def test_dcfr_iterates_match_openspiel(game):
     """Our discounted CFR equals OpenSpiel's DCFRSolver (alpha 3/2, beta 0, gamma 2), iteration for iteration."""
     spiel = discounted_cfr.DCFRSolver(pyspiel.load_game(SPOTS[game].openspiel))
-    solver = Solver(SPOTS[game], method="dcfr")
+    solver = iterating(game)(SPOTS[game], method="dcfr")
     for _ in range(50):
         spiel.evaluate_and_update_policy()
     solver.iterate(50)
@@ -276,6 +295,30 @@ def test_ev_is_undefined_where_the_opponent_never_reaches():
     action_ev, opp_reach = solver.evs()["r"]
     assert np.all(np.isnan(action_ev)) and np.all(opp_reach == 0)
     assert solver.export()["nodes"]["r"]["ev"] == [None] * len(solver.hands)
+
+
+@pytest.mark.parametrize("game", GAMES)
+def test_terminal_sums_equal_the_matrix_products(game):
+    """The O(n) sums at terminal nodes equal the products with the matrices over pairs of hands,
+    up to rounding, for random reaches with some hands at 0."""
+    solver = Solver(SPOTS[game])
+    rng = np.random.default_rng(0)
+    for _ in range(20):
+        reach = rng.random(len(solver.hands)) * (rng.random(len(solver.hands)) < 0.7)
+        assert np.allclose(solver._compatible_reach(reach), solver.compatible @ reach, rtol=0, atol=1e-12)
+        assert np.allclose(solver._showdown_reach(reach), solver.showdown @ reach, rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize("method", Solver.METHODS)
+@pytest.mark.parametrize("game", [g for g in GAMES if g != "mini"])
+def test_terminal_sums_are_the_same_engine(game, method):
+    """The O(n) sums change only rounding: early on, before any drift, the strategies agree with the
+    matrix products' (within 2e-14 after 10 iterations). Mini's part within a few iterations (see
+    `iterating`)."""
+    fast, matrix = Solver(SPOTS[game], method), MatrixSolver(SPOTS[game], method)
+    fast.iterate(10)
+    matrix.iterate(10)
+    assert max(np.abs(fast.average(n) - matrix.average(n)).max() for n in fast.nodes) < 1e-12
 
 
 def test_mini_converges_to_its_value():

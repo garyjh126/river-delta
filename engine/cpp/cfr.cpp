@@ -5,38 +5,11 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
+#include <numeric>
 #include <stdexcept>
 
 namespace cfr {
-
-namespace {
-
-// out[i] = sum over j of m[i][j] * v[j], from `columns`, which holds m[i][j] at [j * n + i]. Going
-// a column at a time adds each out[i]'s terms left to right, as tests/test_cpp.py does, and the
-// inner loop over i vectorises.
-std::vector<double> times(const std::vector<double>& columns, const std::vector<double>& v) {
-    const size_t n = v.size();
-    std::vector<double> out(n, 0.0);
-    for (size_t j = 0; j < n; ++j) {
-        const double* column = columns.data() + j * n;
-        for (size_t i = 0; i < n; ++i) {
-            out[i] += column[i] * v[j];
-        }
-    }
-    return out;
-}
-
-std::vector<double> transpose(const std::vector<double>& m, size_t n) {
-    std::vector<double> out(n * n);
-    for (size_t i = 0; i < n; ++i) {
-        for (size_t j = 0; j < n; ++j) {
-            out[j * n + i] = m[i * n + j];
-        }
-    }
-    return out;
-}
-
-}  // namespace
 
 std::vector<std::string> deal_hands(const Spot& spot) {
     // Cards ordered by rank, then suit in the order of `spot.suits`, highest first; each hand
@@ -101,8 +74,33 @@ Solver::Solver(Spot spot, const std::string& method) : spot_(std::move(spot)) {
         }
     }
     deal_prob_ = 1 / deals;
-    compatible_columns_ = transpose(compatible_, n_);
-    showdown_columns_ = transpose(showdown_, n_);
+    std::map<std::string, int> deck;  // ordered, so cards are numbered as engine/cfr.py numbers them
+    for (const auto& h : hands_) {
+        deck[h.substr(0, 2)] = 0;
+        deck[h.substr(2, 2)] = 0;
+    }
+    for (auto& [card, number] : deck) {
+        number = deck_size_++;
+    }
+    for (const auto& h : hands_) {
+        cards_.push_back({deck[h.substr(0, 2)], deck[h.substr(2, 2)]});
+    }
+    order_.resize(n_);
+    std::iota(order_.begin(), order_.end(), 0);
+    std::stable_sort(order_.begin(), order_.end(), [&](int a, int b) { return strength[a] < strength[b]; });
+    group_start_.resize(n_);
+    group_end_.resize(n_);
+    for (int k = 0; k < n_;) {
+        int end = k;
+        while (end < n_ && strength[order_[end]] == strength[order_[k]]) {
+            ++end;
+        }
+        for (int m = k; m < end; ++m) {
+            group_start_[m] = k;
+            group_end_[m] = end;
+        }
+        k = end;
+    }
     build_tree("", 0, {spot_.blind, spot_.blind});
     size_t size = 0;
     for (const auto& node : nodes_) {
@@ -192,14 +190,92 @@ std::vector<double> Solver::average(int node) const {
     return normalise(std::vector<double>(first, first + nodes_[node].actions.size() * n_));
 }
 
+// Taking away can leave 1e-16 where the true sum is 0, and regret matching turns a regret of 1e-16
+// into a pure strategy. So both sums below also count the hands with reach above 0, the same way,
+// and are exactly 0 where there are none.
+
+std::vector<double> Solver::compatible_reach(const std::vector<double>& reach) const {
+    double total = 0;
+    int count = 0;
+    std::vector<double> per_card(deck_size_, 0.0);
+    std::vector<int> per_card_count(deck_size_, 0);
+    for (int h = 0; h < n_; ++h) {
+        const int some = reach[h] > 0;
+        total += reach[h];
+        count += some;
+        for (int c : cards_[h]) {
+            per_card[c] += reach[h];
+            per_card_count[c] += some;
+        }
+    }
+    // Every hand, less those holding either card; the hand itself holds both, so add it back once.
+    std::vector<double> out(n_);
+    for (int h = 0; h < n_; ++h) {
+        const auto [a, b] = cards_[h];
+        const bool some = count - per_card_count[a] - per_card_count[b] + (reach[h] > 0) > 0;
+        out[h] = some ? total - per_card[a] - per_card[b] + reach[h] : 0.0;
+    }
+    return out;
+}
+
+std::vector<double> Solver::showdown_reach(const std::vector<double>& reach) const {
+    std::vector<double> out(n_);
+    std::vector<double> per_card(deck_size_);
+    std::vector<int> per_card_count(deck_size_);
+    double total;
+    int count;
+    auto start = [&] {
+        total = 0;
+        count = 0;
+        std::fill(per_card.begin(), per_card.end(), 0.0);
+        std::fill(per_card_count.begin(), per_card_count.end(), 0);
+    };
+    auto add = [&](int h) {
+        const int some = reach[h] > 0;
+        total += reach[h];
+        count += some;
+        for (int c : cards_[h]) {
+            per_card[c] += reach[h];
+            per_card_count[c] += some;
+        }
+    };
+    // The reach so far, less the hands holding one of hand h's cards (none holds both).
+    auto others = [&](int h) {
+        const auto [a, b] = cards_[h];
+        return count - per_card_count[a] - per_card_count[b] > 0 ? total - per_card[a] - per_card[b] : 0.0;
+    };
+    // The weaker hands, from the weakest up: at each group of equally strong hands, the running sums
+    // hold every hand below it.
+    start();
+    for (int k = 0; k < n_; k = group_end_[k]) {
+        for (int m = k; m < group_end_[k]; ++m) {
+            out[order_[m]] = others(order_[m]);
+        }
+        for (int m = k; m < group_end_[k]; ++m) {
+            add(order_[m]);
+        }
+    }
+    // Less the stronger hands, from the strongest down.
+    start();
+    for (int k = n_ - 1; k >= 0; k = group_start_[k] - 1) {
+        for (int m = group_start_[k]; m <= k; ++m) {
+            out[order_[m]] -= others(order_[m]);
+        }
+        for (int m = k; m >= group_start_[k]; --m) {
+            add(order_[m]);
+        }
+    }
+    return out;
+}
+
 std::vector<double> Solver::terminal(const Child& end, int player, const std::vector<double>& opp_reach) const {
     std::vector<double> out;
     double scale;
     if (end.folder < 0) {
-        out = times(showdown_columns_, opp_reach);
+        out = showdown_reach(opp_reach);
         scale = end.contrib[0];
     } else {
-        out = times(compatible_columns_, opp_reach);
+        out = compatible_reach(opp_reach);
         scale = (end.folder == player ? -1 : 1) * end.contrib[end.folder];
     }
     for (double& x : out) {

@@ -59,7 +59,8 @@ struct Step {
 };
 
 // CFR with alternating updates (Zinkevich et al. 2007) over the public tree, with a vector over
-// every hand at each node (Johanson et al. 2011), in one of two variants:
+// every hand at each node (Johanson et al. 2011), and terminal nodes in O(n) over hands sorted by
+// strength (the same paper), in one of two variants:
 //   cfr+   regret matching+ and an average weighted by iteration t (Tammelin 2014)
 //   dcfr   discounted CFR (Brown and Sandholm 2019): positive regrets times t^1.5 / (t^1.5 + 1)
 //          and negative ones times 1/2 after each update, and the average weighted by t^2
@@ -100,6 +101,10 @@ private:
     int build_tree(const std::string& seq, int player, std::array<int, 2> contrib);
     // Each hand's column divided by its total; uniform where the total is zero.
     std::vector<double> normalise(std::vector<double> weights) const;
+    // compatible() times `reach`, in O(n): engine/cfr.py's _compatible_reach, adding up in the same order.
+    std::vector<double> compatible_reach(const std::vector<double>& reach) const;
+    // showdown() times `reach`, in O(n): engine/cfr.py's _showdown_reach, adding up in the same order.
+    std::vector<double> showdown_reach(const std::vector<double>& reach) const;
     // Counterfactual value of each of `player`'s hands (chance probability left out).
     std::vector<double> terminal(const Child& end, int player, const std::vector<double>& opp_reach) const;
     std::vector<double> cfr(const Child& at, int player, const std::vector<double>& own,
@@ -113,7 +118,12 @@ private:
     std::vector<std::string> hands_;
     int n_ = 0;
     std::vector<double> compatible_, showdown_;
-    std::vector<double> compatible_columns_, showdown_columns_;  // the same, column by column
+    // What the terminal nodes use instead: each hand's two cards, numbered from 0, and the hands from
+    // weakest to strongest, where hands as strong as the one at place k take places group_start_[k]
+    // up to group_end_[k].
+    std::vector<std::array<int, 2>> cards_;
+    int deck_size_ = 0;
+    std::vector<int> order_, group_start_, group_end_;
     std::array<std::vector<double>, 2> ranges_;
     double deal_prob_ = 0;
     std::vector<Node> nodes_;
