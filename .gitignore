@@ -4,3 +4,4 @@ __pycache__/
 .env
 CLAUDE.md
 .DS_Store
+docs/papers/

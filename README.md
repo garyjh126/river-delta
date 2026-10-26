@@ -144,6 +144,10 @@ command line (`cfr_debug [game] [iterations] [method]`). The `debug` preset in
 "C++ engine: Mini, 1 iteration" launch configuration builds it and runs it under LLDB (CodeLLDB
 extension).
 
+## Papers
+
+`docs/references.md` lists the papers behind each technique, with links.
+
 ## Licence
 
 Not chosen yet. Until it is, all rights are reserved.
