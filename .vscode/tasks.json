@@ -1,0 +1,16 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build C++ engine (debug)",
+            "type": "shell",
+            "command": "cmake --preset debug && cmake --build --preset debug",
+            "options": { "cwd": "${workspaceFolder}/engine/cpp" },
+            "group": "build",
+            "problemMatcher": {
+                "base": "$gcc",
+                "fileLocation": ["autoDetect", "${workspaceFolder}/build/cpp-debug"]
+            }
+        }
+    ]
+}

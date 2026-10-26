@@ -1,0 +1,15 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            // Arguments: game (mini, c1, mini_nl, c1_nl), iterations, method (cfr+ or dcfr).
+            "name": "C++ engine: Mini, 1 iteration",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/cpp-debug/cfr_debug",
+            "args": ["mini", "1", "cfr+"],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build C++ engine (debug)"
+        }
+    ]
+}

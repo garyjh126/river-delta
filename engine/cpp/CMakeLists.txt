@@ -14,3 +14,7 @@ target_compile_options(cfr_core PRIVATE -Wall -Wextra -ffp-contract=off)
 
 pybind11_add_module(cfr_cpp bindings.cpp)
 target_link_libraries(cfr_cpp PRIVATE cfr_core)
+
+# A command-line run of the engine, for stepping through it in a debugger (.vscode/launch.json).
+add_executable(cfr_debug debug_main.cpp)
+target_link_libraries(cfr_debug PRIVATE cfr_core)

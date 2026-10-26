@@ -1,0 +1,30 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "debug",
+            "displayName": "Debug build, for stepping through in a debugger",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/../../build/cpp-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "PYTHON_EXECUTABLE": "${sourceDir}/../../.venv/bin/python",
+                "pybind11_DIR": "${sourceDir}/../../.venv/lib/python3.12/site-packages/pybind11/share/cmake/pybind11"
+            },
+            "environment": {
+                "CFLAGS": "",
+                "CXXFLAGS": "",
+                "CPPFLAGS": "",
+                "LDFLAGS": ""
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "debug",
+            "targets": ["cfr_debug"]
+        }
+    ]
+}
