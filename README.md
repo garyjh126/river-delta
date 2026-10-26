@@ -139,27 +139,31 @@ the two runs differ even in exact arithmetic.
 
 ## The viewer
 
-The viewer covers four games, each on a fixed flop with two hole cards per player:
+The viewer covers five games, each on a fixed board with two hole cards per player:
 
 * **Mini**: an 8-card deck (ranks 2 to 5 in clubs and diamonds), flop 3♣4♦5♣, 10 possible hands.
   One limit betting round (blinds of 1, bet 2, at most one raise).
 * **C1**: a 24-card deck (ranks 2 to 7 in all four suits), flop 5♣6♦7♥, 210 possible hands. Same
   betting as Mini.
 * **C1 no-limit**: the same cards with 20-chip stacks, pot-size bets and raises, and all-in.
+* **River**: the full-deck river spot above, board K♠8♦4♣2♥7♠, 1,081 possible hands, of which each
+  player's starting range holds about 125 combos; the grid greys out the rest.
 * **Hold'em**: the full 52-card deck, flop K♠9♥5♥, 1,176 possible hands (of the 1,326 starting
   combos, 150 hold a board card). Button against big blind in a single-raised pot, 100 bb deep,
   no-limit flop betting: bets of 33%, 75% and 150% of the pot, one raise, all-in.
 
-Mini and both C1 games show our engine's strategies. Their EV tab shows each hand's expected value
-at every decision, and each action's, in chips: what the hand wins from the pot by the end, minus
-the chips it puts in after the blinds, which count as dead money. The EVs come from the engine
-(`Solver.evs`); the tests check them against a walk over every deal and betting line under
-OpenSpiel's rules. **The Hold'em numbers are mock data** from a
+Mini, both C1 games and the river show our engine's strategies. Their EV tab shows each hand's
+expected value at every decision, and each action's, in chips: what the hand wins from the pot by
+the end, minus the chips it puts in after the blinds (on the river, after the pot it starts with),
+which count as dead money. The EVs come from the engine (`Solver.evs`); the tests check them
+against a walk over every deal and betting line under OpenSpiel's rules, and with ranges against a
+walk over every deal weighted by them. **The Hold'em numbers are mock data** from a
 hand-strength heuristic (`viewer/mock_holdem.py`), there only to judge the layout at full size;
 the page labels them as mock.
 
 ```bash
-uv run python engine/cfr.py mini c1 c1_nl       # ~2 s   -> build/<game>.engine.json
+uv run python engine/cfr.py mini c1 c1_nl       # ~8 s   -> build/<game>.engine.json
+uv run python engine/cfr.py river --engine c++  # ~3 s   -> build/river.engine.json
 uv run python viewer/mock_holdem.py             # ~1 s   -> build/holdem.json (mock)
 uv run python viewer/build.py                   # -> build/viewer.html, open it in a browser
 ```

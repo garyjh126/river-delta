@@ -384,7 +384,7 @@ function setGame(key) {
   evTab.disabled = !hasEv;
   evTab.title = hasEv ? '' : "No EV for mock data: this spot isn't a solve";
   document.getElementById('spot').innerHTML =
-    `<span>${G.deck}</span><span class="dot">·</span><span>Flop</span><span class="ct">${G.board.map(cardText).join(' ')}</span>` +
+    `<span>${G.deck}</span><span class="dot">·</span><span>${G.street}</span><span class="ct">${G.board.map(cardText).join(' ')}</span>` +
     `<span class="dot">·</span><span>${G.rules}</span>`;
   document.getElementById('solve').innerHTML = G.mock ? `<span class="pill">Mock data</span>not a solve` : G.source;
   document.getElementById('foot').innerHTML = `<span>${G.note}</span>` + (G.code ? `<code>${G.code}</code>` : '');
@@ -393,7 +393,7 @@ function setGame(key) {
 
 function renderLine() {
   const el = document.getElementById('line');
-  let html = `<div class="pcard flop"><div class="ph"><b>FLOP</b></div><div class="cards">${G.board.map(c => cardFace(c, 'sm')).join('')}</div></div>`;
+  let html = `<div class="pcard flop"><div class="ph"><b>${G.street.toUpperCase()}</b></div><div class="cards">${G.board.map(c => cardFace(c, 'sm')).join('')}</div></div>`;
   let n = G.nodes[G.root];
   for (let i = 0; i <= state.path.length; i++) {
     const current = i === state.path.length;
