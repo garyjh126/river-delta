@@ -1,4 +1,4 @@
-# hu-solver (working name)
+# Riverdelta
 
 A heads-up poker solver, at its very start. What's here is the first slice of the engine and the
 strategy viewer it feeds: a page that walks a game's betting tree and shows how often each hand
