@@ -6,20 +6,22 @@ takes each action at every decision, and what each hand and action is worth ther
 
 ## The engine
 
-`engine/cfr.py` solves one-street games on a fixed board, a flop or a river, limit or no-limit,
-from each player's starting range. It walks the public betting tree once per update and carries a
-vector over every private hand at each node, instead of visiting every deal separately; card
-removal enters only at the end of the hand, in one pass over the hands sorted by strength
-(Johanson et al. 2011). It has two update rules, both from published work: CFR+ (Tammelin
-2014; Tammelin et al. 2015) and discounted CFR (Brown and Sandholm 2019), on top of CFR
-(Zinkevich et al. 2007) and public-tree best response (Johanson et al. 2011). Full references are
-in the module's docstring.
+`engine/cfr.py` solves heads-up spots from a fixed board, a flop, a turn or a river, over one or more
+streets, limit or no-limit, from each player's starting range. It walks the public betting tree once
+per update and carries a vector over every private hand at each node, instead of visiting every
+deal separately. Each card dealt between streets is a chance node in that tree: every card is dealt
+in turn, and the hands holding it drop out below it. Card removal between the two hands enters only
+at the end of the hand, in one pass over the hands sorted by strength on the final board, sorted
+once for every showdown on it (Johanson et al. 2011). It has two update rules, both from published
+work: CFR+ (Tammelin 2014; Tammelin et al. 2015) and discounted CFR (Brown and Sandholm 2019), on
+top of CFR (Zinkevich et al. 2007) and public-tree best response (Johanson et al. 2011). Full
+references are in the module's docstring.
 
 ```bash
 uv run python engine/cfr.py mini c1 c1_nl      # discounted CFR -> build/<game>.engine.json
 uv run python engine/cfr.py c1 --method cfr+   # CFR+ instead
 uv run python scripts/bench_engine.py          # CFR+ against discounted CFR on C1, limit and no-limit
-uv run pytest                                  # ~3 min: the engine against OpenSpiel, the C++ engine against it, the hand evaluator
+uv run pytest                                  # ~9 min: the engine against OpenSpiel, the C++ engine against it, the hand evaluator
 ```
 
 It is checked against OpenSpiel, an independent implementation of the same games, in both betting
@@ -27,6 +29,16 @@ types: the same infostates and showdown results, the same iterates as OpenSpiel'
 discounted CFR, and the same exploitability for our strategy whether our best response or
 OpenSpiel's computes it. On C1 it runs 1,000 iterations in about 1.4 seconds; OpenSpiel's
 CFR+ takes about half an hour for the same 1,000 (`scripts/solve_reference.py` prints its timings).
+
+Over two streets the check runs on `mini_turn` and `mini_turn_nl`: Mini's ranks in three suits (12
+cards), the flop 3♣4♦5♥ fixed and the turn dealt, limit and no-limit. OpenSpiel stores every deal
+and betting line, so that is about as big as it can check (about 2 s an iteration of its CFR+; a
+20-card deck takes 90 s). The same infostates, showdowns on every turn, exploitability and EVs. From
+zero regrets the iterates part from OpenSpiel's at the second iteration: early strategies are often
+pure, so two actions are often worth exactly the same, and which way 5e-15 of rounding goes picks a
+strategy. So both start from the same random regrets, where nothing ties, and give the same CFR+
+and discounted CFR iterates to 1e-9 (3e-15 seen). OpenSpiel's public cards are sorted, which loses
+the order of two dealt cards, so three streets are checked against a walk over every deal instead.
 
 Discounted CFR is the default because it converges faster on these games. From
 `scripts/bench_engine.py` (exploitability in chips per hand; times vary by machine):
@@ -65,12 +77,15 @@ s.iterate(1000)
 s.exploitability()                # 1.296e-05 chips/hand
 ```
 
-The Python engine is its answer key. `tests/test_cpp.py` checks, on all four games and on C1's
-river with and without random ranges: the same hands, betting tree and showdown results; the same
-hand ranking on 92,504 five-card hands and 10,000 seven-card ones; and, for both CFR+ and
-discounted CFR, the same average strategy bit for bit after each of the first 10 iterations and at
-checkpoints up to each game's full count, with the same values, best responses and exploitability
-to within 1e-12 chips per hand.
+The Python engine is its answer key. `tests/test_cpp.py` checks, on all four games, C1's river with
+and without random ranges, the full-deck river, the two-street games (one with random ranges), a
+three-street game and the full-deck turn: the same hands, betting tree and showdown results, with
+the hands sorted the same way on every final board; the same hand ranking on 92,504 five-card hands
+and 10,000 seven-card ones; and, for both CFR+ and discounted CFR, the same average strategy bit for
+bit after each of the first 10 iterations and at checkpoints up to each game's full count, with the
+same values, best responses and exploitability to within 1e-12 chips per hand. The full-deck turn
+takes the Python engine 27 s an iteration, so its iterates are checked for 2 iterations with one
+bet size and one raise size; its full tree is checked on its own.
 
 Bit for bit holds because both engines add up every sum in the same order. At the end of the hand
 they don't multiply by matrices over pairs of hands: they make one pass over the hands sorted by
@@ -134,6 +149,31 @@ iterations of discounted CFR each:
 
 poker_solver's discounted CFR discounts before each update rather than after, so the two runs differ
 even in exact arithmetic.
+
+## A full-deck turn
+
+`SPOTS["turn"]` is the river spot's turn, K♠8♦4♣2♥, there to change at will: the button bet a third
+of the pot on the flop and the big blind called, leaving 8 big blinds in the pot and 86 behind each,
+so a check, a bet of three quarters of the pot and a call make the river spot's pot of 20 with 80
+behind. On both streets the players may bet a third, three quarters or one and a half pots, raise by
+three quarters, or go all-in: 14,052 decision nodes (36 on the turn, the rest across the 48 rivers)
+and 1,128 hands. No flush can come by the river, so the ranges ignore suits; they are written by
+hand for the line so far, for illustration.
+
+```bash
+uv run python engine/cfr.py turn --engine c++   # ~3.5 min -> build/turn.engine.json (no viewer tree yet)
+```
+
+The C++ engine on one thread, discounted CFR, using 0.70 GB at its peak (exploitability as a share
+of the 8 bb pot):
+
+| iterations | seconds | exploitability |
+|---:|---:|---:|
+| 100 | 52 | 1.94% |
+| 200 | 107 | 0.51% |
+| 300 | 162 | 0.24% |
+| 500 | 272 | 0.14% |
+| 1,000 | 548 | 0.034% |
 
 ## The viewer
 

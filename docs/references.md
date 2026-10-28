@@ -17,11 +17,15 @@ Extensive Games. IJCAI 2011.
 [PDF](https://poker.cs.ualberta.ca/publications/ijcai2011_accelerated_best_response.pdf) ·
 `johanson2011-accelerating-best-response.pdf`
 Walking the public betting tree once with a vector over every hand, which the whole engine does,
-and the best response behind our exploitability. Its section on terminal nodes is how the engine
-settles showdowns and folds: one pass over the hands sorted by strength, with the hands that share
-a card taken away by inclusion-exclusion, O(n) instead of O(n²) (`showdown_reach` and
+and the best response behind our exploitability. Its public tree has a chance node for each public
+card, whose value is the sum of its children's; that is how the engine deals the turn and river
+(`deal` in `engine/cpp/cfr.cpp`, `_deal` in `engine/cfr.py`). Its section on terminal nodes is how
+the engine settles showdowns and folds: one pass over the hands sorted by strength, with the hands
+that share a card taken away by inclusion-exclusion, O(n) instead of O(n²) (`showdown_reach` and
 `compatible_reach` in `engine/cpp/cfr.cpp`, `_showdown_reach` and `_compatible_reach` in
-`engine/cfr.py`).
+`engine/cfr.py`), with the hands sorted once per final board for every showdown on it, as it
+suggests (`boards`). Its section on parallel computation, solving the subtrees below a chance node
+at once, is the way to threads.
 
 **Tammelin (2014).** Solving Large Imperfect Information Games Using CFR+.
 [arXiv:1407.5042](https://arxiv.org/abs/1407.5042) · `tammelin2014-cfr-plus.pdf`
@@ -45,7 +49,8 @@ through Monte Carlo Counterfactual Regret Minimization. AAMAS 2012.
 [PDF](https://poker.cs.ualberta.ca/publications/AAMAS12-pcs.pdf) ·
 `johanson2012-public-chance-sampling.pdf`
 Public chance sampling: deal the public cards (turn, river) by sampling while keeping the vectors
-over private hands. One way to add more streets to a vector engine.
+over private hands. The engine deals every card instead, which is the same walk without the
+sampling (exact iterates, checkable against OpenSpiel); sampling is a speed-up for later.
 
 **Waugh (2013).** A Fast and Optimal Hand Isomorphism Algorithm. AAAI 2013 Workshop on Computer
 Poker and Imperfect Information.
@@ -123,5 +128,5 @@ Six-player no-limit Hold'em, solved with a sampled form of CFR plus search durin
 the independent implementation the tests check the engine against.
 
 **noambrown/poker_solver** (MIT), [github.com/noambrown/poker_solver](https://github.com/noambrown/poker_solver):
-a river-only solver with a permissive licence, a candidate cross-check for a full-deck river
-spot.
+a river-only solver with a permissive licence, the cross-check for the full-deck river spot
+(`scripts/check_river.py`).
