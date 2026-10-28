@@ -39,4 +39,5 @@ def solver(spot, method: str = "cfr+"):
     ranges = [weights(r, deal_hands(spot)).tolist() for r in spot.ranges] if spot.ranges else []
     return cpp.Solver(cpp.Spot(ranks=spot.ranks, suits=spot.suits, board=list(spot.board), blind=spot.blind,
                                bet=spot.bet, max_raises=spot.max_raises, stack=spot.stack,
-                               pot_sizes=list(spot.pot_sizes), ranges=ranges), method)
+                               pot_sizes=list(spot.pot_sizes), raise_sizes=spot.raise_sizes, ranges=ranges,
+                               streets=spot.streets), method)

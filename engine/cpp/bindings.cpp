@@ -25,23 +25,42 @@ PYBIND11_MODULE(cfr_cpp, m) {
     py::class_<cfr::Spot>(m, "Spot")
         .def(py::init([](std::string ranks, std::string suits, std::vector<std::string> board, int blind,
                          int bet, int max_raises, std::optional<int> stack, std::vector<double> pot_sizes,
-                         std::vector<std::vector<double>> ranges) {
-                 return cfr::Spot{ranks, suits, board, blind, bet, max_raises, stack, pot_sizes, ranges};
+                         std::optional<std::vector<double>> raise_sizes, std::vector<std::vector<double>> ranges,
+                         int streets) {
+                 return cfr::Spot{ranks, suits, board, blind, bet, max_raises, stack, pot_sizes, raise_sizes,
+                                  ranges, streets};
              }),
              py::kw_only(), py::arg("ranks"), py::arg("suits"), py::arg("board"), py::arg("blind"),
-             py::arg("bet"), py::arg("max_raises"), py::arg("stack"), py::arg("pot_sizes"), py::arg("ranges"));
+             py::arg("bet"), py::arg("max_raises"), py::arg("stack"), py::arg("pot_sizes"), py::arg("raise_sizes"),
+             py::arg("ranges"), py::arg("streets"));
 
     py::class_<cfr::Child>(m, "Child")
         .def_readonly("node", &cfr::Child::node)
+        .def_readonly("chance", &cfr::Child::chance)
         .def_readonly("folder", &cfr::Child::folder)
-        .def_readonly("contrib", &cfr::Child::contrib);
+        .def_readonly("contrib", &cfr::Child::contrib)
+        .def_readonly("board", &cfr::Child::board);
 
     py::class_<cfr::Node>(m, "Node")
         .def_readonly("seq", &cfr::Node::seq)
         .def_readonly("player", &cfr::Node::player)
         .def_readonly("contrib", &cfr::Node::contrib)
         .def_readonly("actions", &cfr::Node::actions)
-        .def_readonly("children", &cfr::Node::children);
+        .def_readonly("children", &cfr::Node::children)
+        .def_readonly("dealt", &cfr::Node::dealt);
+
+    py::class_<cfr::Chance>(m, "Chance")
+        .def_readonly("seq", &cfr::Chance::seq)
+        .def_readonly("contrib", &cfr::Chance::contrib)
+        .def_readonly("dealt", &cfr::Chance::dealt)
+        .def_readonly("cards", &cfr::Chance::cards)
+        .def_readonly("children", &cfr::Chance::children);
+
+    py::class_<cfr::Board>(m, "Board")
+        .def_readonly("dealt", &cfr::Board::dealt)
+        .def_readonly("order", &cfr::Board::order)
+        .def_readonly("group_start", &cfr::Board::group_start)
+        .def_readonly("group_end", &cfr::Board::group_end);
 
     py::class_<cfr::Step> step(m, "Step");
     py::enum_<cfr::Step::Kind>(step, "Kind")
@@ -65,10 +84,15 @@ PYBIND11_MODULE(cfr_cpp, m) {
         .def(py::init<cfr::Spot, std::string>(), py::arg("spot"), py::arg("method") = "cfr+")
         .def_property_readonly("hands", &cfr::Solver::hands)
         .def_property_readonly("nodes", &cfr::Solver::nodes)
+        .def_property_readonly("chances", &cfr::Solver::chances)
+        .def_property_readonly("boards", &cfr::Solver::boards)
         .def_property_readonly("compatible", [](const cfr::Solver& s) {
             return matrix(s.compatible(), s.hands().size(), s.hands().size());
         })
-        .def_property_readonly("showdown", [](const cfr::Solver& s) {
+        .def_property_readonly("showdown", [](const cfr::Solver& s) -> py::object {
+            if (s.showdown().empty()) {
+                return py::none();  // more than one street
+            }
             return matrix(s.showdown(), s.hands().size(), s.hands().size());
         })
         .def_property_readonly("ranges", [](const cfr::Solver& s) {

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from engine.cards import value
-from engine.cfr import SPOTS, Node, Solver, deal_hands
+from engine.cfr import SPOTS, Chance, Node, Solver, deal_hands
 from engine.native import load
 from engine.native import solver as cpp_solver
 
@@ -22,28 +22,49 @@ def with_random_ranges(spot, seed: int = 1):
     return dataclasses.replace(spot, ranges=ranges)
 
 
-# The full-deck river only to 30 iterations: the Python engine takes 0.1 s for each.
+# The full-deck river only to 30 iterations: the Python engine takes 0.1 s for each. The two-street
+# games to 100, and three streets (11,076 nodes) to 3.
 CASES = {**SPOTS, "c1_river_ranges": with_random_ranges(SPOTS["c1_river"]),
-         "river": dataclasses.replace(SPOTS["river"], iterations=30)}
-GAMES = ["mini", "c1", "mini_nl", "c1_nl", "c1_river", "c1_river_ranges", "river"]
+         "river": dataclasses.replace(SPOTS["river"], iterations=30),
+         "mini_turn": dataclasses.replace(SPOTS["mini_turn"], iterations=100),
+         "mini_turn_nl": dataclasses.replace(SPOTS["mini_turn_nl"], iterations=100),
+         "mini_turn_ranges": with_random_ranges(dataclasses.replace(SPOTS["mini_turn_nl"], iterations=100)),
+         "mini_three_streets": dataclasses.replace(SPOTS["mini_turn"], streets=3, iterations=3)}
+GAMES = ["mini", "c1", "mini_nl", "c1_nl", "c1_river", "c1_river_ranges", "river", "mini_turn", "mini_turn_nl",
+         "mini_turn_ranges", "mini_three_streets"]
 
 
 def py_tree(solver: Solver) -> dict:
+    """Every decision and chance node, keyed by its seq, with where each action or card leads."""
     def child(c):
-        return ("node", c.seq) if isinstance(c, Node) else ("end", c.folder, tuple(c.contrib))
+        if isinstance(c, (Node, Chance)):
+            return type(c).__name__.lower(), c.seq
+        return "end", c.folder, tuple(c.contrib), c.dealt if c.folder is None else None
 
-    return {n.seq: (n.player, tuple(n.contrib), n.actions, [child(c) for c in n.children]) for n in solver.nodes}
+    out, stack = {}, [solver.root]
+    while stack:
+        n = stack.pop()
+        if isinstance(n, Node):
+            out[n.seq] = (n.player, tuple(n.contrib), n.dealt, n.actions, [child(c) for c in n.children])
+        elif isinstance(n, Chance):
+            out[n.seq] = ("chance", tuple(n.contrib), n.dealt, n.cards, [child(c) for c in n.children])
+        stack += [c for c in n.children if isinstance(c, (Node, Chance))]
+    return out
 
 
 def cpp_tree(solver) -> dict:
-    nodes = solver.nodes
+    nodes, chances, boards = solver.nodes, solver.chances, solver.boards
 
     def child(c):
         if c.node >= 0:
             return "node", nodes[c.node].seq
-        return "end", None if c.folder < 0 else c.folder, tuple(c.contrib)
+        if c.chance >= 0:
+            return "chance", chances[c.chance].seq
+        return "end", None if c.folder < 0 else c.folder, tuple(c.contrib), tuple(boards[c.board].dealt) if c.board >= 0 else None
 
-    return {n.seq: (n.player, tuple(n.contrib), n.actions, [child(c) for c in n.children]) for n in nodes}
+    out = {n.seq: (n.player, tuple(n.contrib), tuple(n.dealt), n.actions, [child(c) for c in n.children]) for n in nodes}
+    out |= {n.seq: ("chance", tuple(n.contrib), tuple(n.dealt), n.cards, [child(c) for c in n.children]) for n in chances}
+    return out
 
 
 @pytest.mark.parametrize("game", GAMES)
@@ -59,7 +80,13 @@ def test_same_hands_and_tree(game):
 def test_same_matrices(game):
     py, cpp = Solver(CASES[game]), cpp_solver(CASES[game])
     assert np.array_equal(cpp.compatible, py.compatible)
-    assert np.array_equal(cpp.showdown, py.showdown)
+    if py.showdown is None:
+        assert cpp.showdown is None
+    else:
+        assert np.array_equal(cpp.showdown, py.showdown)
+    assert {tuple(b.dealt) for b in cpp.boards} == set(py.boards)
+    for b in cpp.boards:  # each final board's hands sorted by strength, with the same ties
+        assert all(np.array_equal(x, y) for x, y in zip((b.order, b.group_start, b.group_end), py.boards[tuple(b.dealt)]))
     assert np.array_equal(cpp.ranges, py.ranges)
     assert cpp.deal_prob == pytest.approx(py.deal_prob, rel=1e-14)  # numpy adds up the deals in another order
 
@@ -108,7 +135,7 @@ def test_same_iterates(game, method):
 
 
 @pytest.mark.parametrize("method", Solver.METHODS)
-@pytest.mark.parametrize("game", GAMES)
+@pytest.mark.parametrize("game", [g for g in GAMES if g != "mini_three_streets"])  # 10 iterations of 11,076 nodes
 def test_trace_is_the_same_run(game, method):
     """A traced run (the replay page's) ends where an untraced one does, and the regrets it records
     last at each node are the Python engine's, bit for bit."""
