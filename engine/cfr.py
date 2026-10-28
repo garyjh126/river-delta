@@ -143,6 +143,22 @@ SPOTS = {
                       "AA, KK, QQ:0.5, JJ:0.25, 88, 44, 22, 77:0.25, AK, KQ, KJ, KT, K9s, K8s, K7s, K4s, K2s, "
                       "K6s:0.5, K5s:0.5, 65s, 53s, A5s, A3s, 63s:0.5, 76s:0.5, QJs:0.5, QTs:0.5, JTs:0.5, "
                       "T9s:0.5, 96s:0.25, AQ:0.25, AJ:0.25")),
+    # The river spot's turn, K♠8♦4♣2♥, to change at will: the button bet a third of the pot on the
+    # flop and the big blind called. 8 big blinds in the pot and 86 behind each (the river spot's 90),
+    # so a check, a bet of three quarters and a call make the river spot's pot of 20 with 80 behind.
+    # On both streets, bets of a third, three quarters and one and a half pots, raises of three
+    # quarters, and all-in. No flush can come by the river, so the ranges ignore suits. They are
+    # written by hand to fit the line so far, for illustration: no solve of the preflop and flop made them.
+    "turn": Spot(ranks=RANKS, suits="cdhs", board=("Ks", "8d", "4c", "2h"), iterations=300, blind=4, stack=90,
+                 pot_sizes=(0.33, 0.75, 1.5), raise_sizes=(0.75,), streets=2, ranges=(
+                     "K2s+, K5o+, KQs:0.5, K8s:0.5, K8o:0.5, K4s:0.5, AKo:0.25, A8s, A8o, 98s, 98o:0.5, 87s, "
+                     "87o:0.5, T8s, J8s, Q8s, 86s, 85s, T8o:0.25, A4s, A4o:0.5, 54s, 64s, 74s:0.5, QQ:0.5, JJ, "
+                     "TT, 99, 88:0.5, 77, 66:0.5, 55:0.5, 44:0.5, 33:0.5, 22:0.5, QJs, QTs, JTs, T9s, 76s, 65s, "
+                     "75s, 53s, 63s, A5s, A3s, A2s, QJo:0.5, JTo:0.25, AJs:0.5, ATs:0.5",
+                     "AA, KK, QQ, JJ, TT, 99, 88, 44, 77:0.5, 66:0.5, 55:0.5, 33:0.5, 22:0.5, AK, AQ, AJ, AT, "
+                     "A9s, A8, A7s, A6s, A5s, A4s, A3s, A2s, K2s+, K7o+, QJ, QT, JT, Q9s:0.5, J9s:0.5, T9s, "
+                     "98s, 87s, 76s, 65s, 54s, 86s, T8s, J8s:0.5, Q8s:0.5, 64s:0.5, 75s:0.5, 53s:0.5, "
+                     "63s:0.25")),
 }
 
 

@@ -23,15 +23,18 @@ def with_random_ranges(spot, seed: int = 1):
 
 
 # The full-deck river only to 30 iterations: the Python engine takes 0.1 s for each. The two-street
-# games to 100, and three streets (11,076 nodes) to 3.
+# games to 100, and three streets (11,076 nodes) to 3. The full-deck turn takes the Python engine 27 s
+# an iteration, so its iterates are checked with bets of 75% and raises of 150% only (about 6 s
+# each), for 2 iterations; its full tree is checked on its own.
 CASES = {**SPOTS, "c1_river_ranges": with_random_ranges(SPOTS["c1_river"]),
          "river": dataclasses.replace(SPOTS["river"], iterations=30),
          "mini_turn": dataclasses.replace(SPOTS["mini_turn"], iterations=100),
          "mini_turn_nl": dataclasses.replace(SPOTS["mini_turn_nl"], iterations=100),
          "mini_turn_ranges": with_random_ranges(dataclasses.replace(SPOTS["mini_turn_nl"], iterations=100)),
-         "mini_three_streets": dataclasses.replace(SPOTS["mini_turn"], streets=3, iterations=3)}
+         "mini_three_streets": dataclasses.replace(SPOTS["mini_turn"], streets=3, iterations=3),
+         "turn_small": dataclasses.replace(SPOTS["turn"], pot_sizes=(0.75,), raise_sizes=(1.5,), iterations=2)}
 GAMES = ["mini", "c1", "mini_nl", "c1_nl", "c1_river", "c1_river_ranges", "river", "mini_turn", "mini_turn_nl",
-         "mini_turn_ranges", "mini_three_streets"]
+         "mini_turn_ranges", "mini_three_streets", "turn_small"]
 
 
 def py_tree(solver: Solver) -> dict:
@@ -67,7 +70,7 @@ def cpp_tree(solver) -> dict:
     return out
 
 
-@pytest.mark.parametrize("game", GAMES)
+@pytest.mark.parametrize("game", GAMES + ["turn"])
 def test_same_hands_and_tree(game):
     py, cpp = Solver(CASES[game]), cpp_solver(CASES[game])
     assert cpp.hands == py.hands
@@ -135,7 +138,8 @@ def test_same_iterates(game, method):
 
 
 @pytest.mark.parametrize("method", Solver.METHODS)
-@pytest.mark.parametrize("game", [g for g in GAMES if g != "mini_three_streets"])  # 10 iterations of 11,076 nodes
+# Not three streets (10 iterations of 11,076 nodes) or the full-deck turn (gigabytes of recorded steps).
+@pytest.mark.parametrize("game", [g for g in GAMES if g not in ("mini_three_streets", "turn_small")])
 def test_trace_is_the_same_run(game, method):
     """A traced run (the replay page's) ends where an untraced one does, and the regrets it records
     last at each node are the Python engine's, bit for bit."""
