@@ -2,6 +2,7 @@
 name = "riverdelta"
 version = "0.0.0"
 description = "Heads-up poker solver."
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "numpy==2.5.3",

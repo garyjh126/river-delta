@@ -204,4 +204,4 @@ extension).
 
 ## Licence
 
-Not chosen yet. Until it is, all rights are reserved.
+MIT; see `LICENSE`.
