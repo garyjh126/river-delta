@@ -1,18 +1,21 @@
-"""Vector-form CFR for heads-up poker with one betting round on a fixed board: a flop, or a river.
+"""Vector-form CFR for heads-up poker from a fixed board (a flop, a turn or a river) over one or more
+betting rounds, with a card dealt before each round after the first.
 
-Our solver's engine. It solves the Mini and C1 games, in limit and no-limit versions, and C1 on a
-river, which OpenSpiel can also solve, so every result is checked against an independent
-implementation (tests/test_cfr.py). It also solves a full-deck river with ranges and several bet
-sizes, which scripts/check_river.py checks against noambrown/poker_solver.
+Our solver's engine. It solves the Mini and C1 games, in limit and no-limit versions, C1 on a river,
+and Mini's ranks in three suits over two rounds, which OpenSpiel can also solve, so every result is
+checked against an independent implementation (tests/test_cfr.py). It also solves a full-deck river
+with ranges and several bet sizes, which scripts/check_river.py checks against noambrown/poker_solver.
 
-How it works. The betting is walked as a public tree, one node per betting sequence, and each
-node carries a vector over every private hand instead of one node per deal (Johanson et al.
-2011). Cards enter only at the terminal nodes, where each hand's value sums over the opponent's
-hands that share no card with it. That takes O(n) per node, not a product with a matrix over
-pairs of hands: a pass over the hands sorted by strength, which takes away the hands that share
-a card by inclusion-exclusion (Johanson et al. 2011 again). Each player's starting range weights
-the hands it is dealt: it is the reach that player's hands start the tree with. Regrets follow
-CFR (Zinkevich et al. 2007) with alternating updates, in one of two variants:
+How it works. The betting is walked as a public tree, one node per betting sequence and dealt card,
+and each node carries a vector over every private hand instead of one node per deal (Johanson et
+al. 2011). A dealt card is a chance node in that tree: every card is dealt in turn, the hands
+holding it drop out below it, and the node's value sums its children's. Hole cards enter only at the
+terminal nodes, where each hand's value sums over the opponent's hands that share no card with it.
+That takes O(n) per node, not a product with a matrix over pairs of hands: a pass over the hands
+sorted by strength on that board, sorted once for every showdown on it, which takes away the hands
+that share a card by inclusion-exclusion (Johanson et al. 2011 again). Each player's starting range
+weights the hands it is dealt: it is the reach that player's hands start the tree with. Regrets
+follow CFR (Zinkevich et al. 2007) with alternating updates, in one of two variants:
 
   cfr+   regret matching+ and an average weighted by iteration t (Tammelin 2014; Tammelin et
          al. 2015)
@@ -215,14 +218,14 @@ def end_of_round(spot: Spot, seq: str, contrib: tuple[int, int], dealt: tuple[st
     next card, then the next round's betting, or straight to the next card if both are all-in."""
     if len(dealt) + 1 == spot.streets:
         return Terminal(None, contrib, dealt)
-    cards = [c for c in deck(spot) if c not in dealt]
+    cards = [c for c in cards_left(spot) if c not in dealt]
     allin = spot.nolimit and contrib[0] == spot.stack
     return Chance(seq, contrib, dealt, cards, [
         end_of_round(spot, f"{seq}|{c}|", contrib, dealt + (c,)) if allin
         else build_tree(spot, f"{seq}|{c}|", 0, contrib, dealt + (c,)) for c in cards])
 
 
-def deck(spot: Spot) -> list[str]:
+def cards_left(spot: Spot) -> list[str]:
     """The cards not on the board, ordered by rank, then suit in the order of `spot.suits`, highest
     first."""
     index = {r + s: i * len(spot.suits) + j for i, r in enumerate(spot.ranks) for j, s in enumerate(spot.suits)}
@@ -232,7 +235,7 @@ def deck(spot: Spot) -> list[str]:
 def deal_hands(spot: Spot) -> list[str]:
     """Every two-card hand left once the board is out, written like OpenSpiel's private cards
     (higher card first, in deck order)."""
-    return [a + b for a, b in itertools.combinations(deck(spot), 2)]
+    return [a + b for a, b in itertools.combinations(cards_left(spot), 2)]
 
 
 class Solver:
@@ -248,38 +251,61 @@ class Solver:
         cards = [{h[:2], h[2:]} for h in self.hands]
         # compatible[i, j]: hands i and j share no card, so both can be dealt at once.
         self.compatible = np.array([[not (a & b) for b in cards] for a in cards], dtype=float)
-        strength = [value(list(spot.board) + [h[:2], h[2:]]) for h in self.hands]
-        rank = {v: k for k, v in enumerate(sorted(set(strength)))}
-        r = np.array([rank[v] for v in strength])
-        # showdown[i, j]: +1 if hand i beats hand j, -1 if it loses, 0 for a tie or a clash.
-        self.showdown = np.sign(r[:, None] - r[None, :]) * self.compatible
-        # What the terminal nodes use instead of those two matrices: each hand's two cards, numbered
-        # from 0, and the hands from weakest to strongest, where hands as strong as the one at place k
-        # take places group_start[k] up to group_end[k].
+        # live[c]: 1 for each hand that doesn't hold card c, the hands left once c is dealt.
+        self.live = {c: np.array([float(c not in h) for h in cards]) for c in cards_left(spot)}
+        # Each hand's two cards, numbered from 0, for the sums at terminal nodes.
         deck = {c: k for k, c in enumerate(sorted({c for h in self.hands for c in (h[:2], h[2:])}))}
         self.cards = np.array([[deck[h[:2]], deck[h[2:]]] for h in self.hands])
         self.deck_size = len(deck)
-        self.order = np.argsort(r, kind="stable")
-        ranked = r[self.order]
-        self.group_start = np.searchsorted(ranked, ranked, side="left")
-        self.group_end = np.searchsorted(ranked, ranked, side="right")
         # ranges[p, i]: player p's weight on hand i, the reach its hands start the tree with.
         self.ranges = np.array([weights(r, self.hands) for r in spot.ranges]) if spot.ranges else np.ones((2, n))
         # Deal (i, j), hand i to player 0 and j to player 1, has probability ranges[0, i] * ranges[1, j] * deal_prob
         # when the two share no card.
         self.deal_prob = 1 / (self.ranges[0] @ self.compatible @ self.ranges[1])
         self.root = build_tree(spot)
-        self.nodes = []
+        self.nodes, final = [], set()
         stack = [self.root]
         while stack:
             node = stack.pop()
             if isinstance(node, Node):
                 self.nodes.append(node)
+            final |= {c.dealt for c in node.children if isinstance(c, Terminal) and c.folder is None}
             stack += [c for c in reversed(node.children) if not isinstance(c, Terminal)]
         self.by_seq = {node.seq: node for node in self.nodes}
+        # Per final board (the cards dealt after the fixed board, as at a showdown), what the showdowns
+        # there use instead of a matrix over pairs of hands: the hands that hold none of the dealt cards
+        # from weakest to strongest, where hands as strong as the one at place k take places
+        # group_start[k] up to group_end[k]. Sorted once and used by every showdown on that board
+        # (Johanson et al. 2011).
+        self.boards = {}
+        for dealt in sorted(final):
+            live, r = self._ranking(dealt)
+            k = np.argsort(r, kind="stable")
+            ranked = r[k]
+            self.boards[dealt] = (live[k], np.searchsorted(ranked, ranked, side="left"),
+                                  np.searchsorted(ranked, ranked, side="right"))
+        # showdown[i, j], on one street: +1 if hand i beats hand j, -1 if it loses, 0 for a tie or a clash.
+        self.showdown = self.showdown_matrix() if spot.streets == 1 else None
         self.regret = {node.seq: np.zeros((len(node.actions), n)) for node in self.nodes}
         self.strategy_sum = {node.seq: np.zeros((len(node.actions), n)) for node in self.nodes}
         self.iterations = 0
+
+    def _ranking(self, dealt: tuple[str, ...]) -> tuple[np.ndarray, np.ndarray]:
+        """The hands that hold none of `dealt`, and the rank of each one's strength on the board with
+        `dealt` added (0 for the weakest, equal for a tie)."""
+        board = list(self.spot.board) + list(dealt)
+        live = [i for i, h in enumerate(self.hands) if h[:2] not in dealt and h[2:] not in dealt]
+        strength = [value(board + [self.hands[i][:2], self.hands[i][2:]]) for i in live]
+        rank = {v: k for k, v in enumerate(sorted(set(strength)))}
+        return np.array(live, dtype=int), np.array([rank[v] for v in strength], dtype=int)
+
+    def showdown_matrix(self, dealt: tuple[str, ...] = ()) -> np.ndarray:
+        """showdown[i, j] on the board with `dealt` added: +1 if hand i beats hand j, -1 if it loses,
+        0 for a tie, a clash, or a hand holding a dealt card. For tests: the engine sums in O(n)."""
+        live, r = self._ranking(dealt)
+        out = np.zeros_like(self.compatible)
+        out[np.ix_(live, live)] = np.sign(r[:, None] - r[None, :]) * self.compatible[np.ix_(live, live)]
+        return out
 
     @staticmethod
     def _normalise(weights: np.ndarray) -> np.ndarray:
@@ -303,11 +329,13 @@ class Solver:
         per_card = np.bincount(self.cards.ravel(), np.repeat(x, 2), minlength=self.deck_size)
         return total - per_card[self.cards[:, 0]] - per_card[self.cards[:, 1]] + x
 
-    def _weaker_stronger_sums(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """For each place in `order`, x (given in that order) over the weaker hands and over the
-        stronger ones, each less the hands holding one of that hand's cards (none holds both). Sums go
-        from the weakest hand up and from the strongest down, as the C++ engine's do."""
-        n, cards = len(x), self.cards[self.order]
+    def _weaker_stronger_sums(self, x: np.ndarray, order: np.ndarray, start: np.ndarray,
+                              end: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """For each place in `order` (a board's hands sorted by strength, from `boards`), x (given in
+        that order) over the weaker hands and over the stronger ones, each less the hands holding one of
+        that hand's cards (none holds both). Sums go from the weakest hand up and from the strongest
+        down, as the C++ engine's do."""
+        n, cards = len(x), self.cards[order]
         held = np.zeros((n, self.deck_size))  # held[k, c]: x[k] if the hand at place k holds card c
         held[np.arange(n), cards[:, 0]] = x
         held[np.arange(n), cards[:, 1]] = x
@@ -316,7 +344,7 @@ class Solver:
         above = np.vstack([np.cumsum(held[::-1], axis=0)[::-1], none])  # row k: in the hands at k and above
         total_below = np.concatenate([[0.0], np.cumsum(x)])
         total_above = np.concatenate([np.cumsum(x[::-1])[::-1], [0.0]])
-        a, b, start, end = cards[:, 0], cards[:, 1], self.group_start, self.group_end
+        a, b = cards[:, 0], cards[:, 1]
         return (total_below[start] - below[start, a] - below[start, b],
                 total_above[end] - above[end, a] - above[end, b])
 
@@ -328,26 +356,42 @@ class Solver:
         """compatible @ reach in O(n) (Johanson et al. 2011): the opponent's reach behind each hand."""
         return np.where(self._compatible_sums(1.0 * (reach > 0)) > 0, self._compatible_sums(reach), 0.0)
 
-    def _showdown_reach(self, reach: np.ndarray) -> np.ndarray:
-        """showdown @ reach in O(n) (Johanson et al. 2011), from the hands sorted by strength: for each
-        hand, the opponent's reach with weaker hands less its reach with stronger ones."""
-        s = reach[self.order]
-        weaker, stronger = self._weaker_stronger_sums(s)
-        some_weaker, some_stronger = self._weaker_stronger_sums(1.0 * (s > 0))
-        out = np.empty(len(s))
-        out[self.order] = np.where(some_weaker > 0, weaker, 0.0) - np.where(some_stronger > 0, stronger, 0.0)
+    def _showdown_reach(self, reach: np.ndarray, dealt: tuple[str, ...] = ()) -> np.ndarray:
+        """showdown_matrix(dealt) @ reach in O(n) (Johanson et al. 2011), from the board's hands sorted
+        by strength: for each hand, the opponent's reach with weaker hands less its reach with stronger
+        ones; 0 for a hand holding a dealt card."""
+        order, start, end = self.boards[dealt]
+        s = reach[order]
+        weaker, stronger = self._weaker_stronger_sums(s, order, start, end)
+        some_weaker, some_stronger = self._weaker_stronger_sums(1.0 * (s > 0), order, start, end)
+        out = np.zeros(len(reach))
+        out[order] = np.where(some_weaker > 0, weaker, 0.0) - np.where(some_stronger > 0, stronger, 0.0)
         return out
 
     def _terminal(self, node: Terminal, player: int, opp_reach: np.ndarray) -> np.ndarray:
         """Counterfactual value of each of `player`'s hands (chance probability left out)."""
         if node.folder is None:
-            return node.contrib[0] * self._showdown_reach(opp_reach)
+            return node.contrib[0] * self._showdown_reach(opp_reach, node.dealt)
         sign = -1 if node.folder == player else 1
         return sign * node.contrib[node.folder] * self._compatible_reach(opp_reach)
+
+    def _deal(self, node: Chance, walk) -> np.ndarray:
+        """A chance node in the public tree (Johanson et al. 2011): the value of each hand, summed over
+        the cards dealt, from `walk(child, live)` for each card's child, where `live` marks the hands
+        that don't hold the card. Below a card, the hands holding it have no reach (`walk` multiplies
+        both players' reach by `live`) and get no value from it. Any two hands leave the same number of
+        cards to deal, each as likely, so each card counts 1 / (cards left - 4)."""
+        total = 0
+        for card, child in zip(node.cards, node.children):
+            live = self.live[card]
+            total = total + live * walk(child, live)
+        return total / (len(node.cards) - 4)
 
     def _cfr(self, node, player: int, own: np.ndarray, opp: np.ndarray) -> np.ndarray:
         if isinstance(node, Terminal):
             return self._terminal(node, player, opp)
+        if isinstance(node, Chance):
+            return self._deal(node, lambda child, live: self._cfr(child, player, own * live, opp * live))
         sigma = self.current(node)
         if node.player != player:
             return sum(self._cfr(child, player, own, opp * sigma[a]) for a, child in enumerate(node.children))
@@ -375,6 +419,8 @@ class Solver:
         each of `player`'s nodes' action values and the opponent's reach behind each hand there."""
         if isinstance(node, Terminal):
             return self._terminal(node, player, opp)
+        if isinstance(node, Chance):
+            return self._deal(node, lambda child, live: self._evaluate(child, player, opp * live, best, record))
         sigma = self.average(node)
         if node.player != player:
             return sum(self._evaluate(c, player, opp * sigma[a], best, record) for a, c in enumerate(node.children))
@@ -403,21 +449,24 @@ class Solver:
         """Per decision node: the acting player's EV for each action and hand (actions x hands), and
         the chance that the opponent reaches the node given each hand (from its starting range).
 
-        EV is expected chips given the hand and the node, with both playing the average strategy.
-        The blinds count as dead money: EV is the chips won from the pot minus the chips put in
-        after the blinds, so folding without having bet is worth 0. It is NaN where no opponent
-        hand that the hand leaves possible reaches the node. The opponent's reach weights hands
-        when their EVs are averaged (card removal)."""
+        EV is expected chips given the hand, the cards dealt and the node, with both playing the
+        average strategy. The blinds count as dead money: EV is the chips won from the pot minus the
+        chips put in after the blinds, so folding without having bet is worth 0. It is NaN where no
+        opponent hand that the hand leaves possible reaches the node, and for a hand holding a card
+        dealt by then. The opponent's reach weights hands when their EVs are averaged (card removal)."""
         record = {}
         for player in (0, 1):
             self._evaluate(self.root, player, self.ranges[1 - player], False, record)
-        # The opponent's starting range, given each of the player's hands.
-        dealt = [self._compatible_reach(self.ranges[1 - player]) for player in (0, 1)]
-        out = {}
+        out, start = {}, {}
         for seq, (values, mass) in record.items():
-            start = dealt[self.by_seq[seq].player]
+            node = self.by_seq[seq]
+            live = np.prod([self.live[c] for c in node.dealt], axis=0) if node.dealt else 1.0
+            key = node.player, node.dealt
+            if key not in start:  # the opponent's starting range, given each of the player's hands and the cards dealt
+                start[key] = live * self._compatible_reach(self.ranges[1 - node.player] * live)
+            mass = live * mass
             out[seq] = (values / np.where(mass > 0, mass, np.nan) + self.spot.blind,
-                        np.divide(mass, start, out=np.zeros_like(mass), where=start > 0))
+                        np.divide(mass, start[key], out=np.zeros_like(mass), where=start[key] > 0))
         return out
 
     def export(self) -> dict:
@@ -426,7 +475,10 @@ class Solver:
         EV, its EV for each action and the opponent's reach behind it (see `evs`). EVs are null
         where that reach rounds to 0: the opponent (almost) never gets there, so they would rest on
         an unconverged sliver of range. Amounts in labels leave out the blinds, which act like
-        antes: "bet 2" puts 2 more chips in."""
+        antes: "bet 2" puts 2 more chips in. One street only, as the viewer shows."""
+        if self.spot.streets > 1:
+            raise NotImplementedError("the viewer's tree has one street")
+
         def nid(node: Node) -> str:
             return node.seq or "root"
 
@@ -505,7 +557,8 @@ def main():
         out.parent.mkdir(exist_ok=True)
         out.write_text(json.dumps({"method": args.method, "engine": args.engine, "spot": asdict(spot),
                                    "load": load, "nolimit": spot.nolimit, "stack": spot.stack, "iterations": iterations,
-                                   "seconds": round(seconds, 1), "exploitability": expl, "tree": solver.export()}))
+                                   "seconds": round(seconds, 1), "exploitability": expl,
+                                   "tree": solver.export() if spot.streets == 1 else None}))
 
 
 if __name__ == "__main__":
