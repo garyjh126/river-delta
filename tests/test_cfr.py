@@ -16,10 +16,20 @@ from engine.cfr import SPOTS, Solver, Spot, Terminal
 ACTION_ID = {"fold": 0, "check": 1, "call": 1, "bet": 2, "raise": 2, "allin": 3}
 
 
-def info(key: str) -> tuple[int, str, str]:
-    """(player, private hand, betting sequence) from an OpenSpiel universal_poker infostate string."""
+def info(key: str, board: tuple[str, ...] = ()) -> tuple[int, str, str]:
+    """(player, private hand, our node's seq) from an OpenSpiel universal_poker infostate string.
+    OpenSpiel splits the rounds' betting with |; our seq also writes the card dealt for the second
+    round, the public card not on `board`. OpenSpiel sorts the public cards, which loses the order of
+    two or more dealt cards, so only two rounds are read."""
     player = int(re.search(r"\[Player: (\d)\]", key).group(1))
-    return player, re.search(r"\[Private: (\w+)\]", key).group(1), re.search(r"\[Sequences: (\w*)\]", key).group(1)
+    hand = re.search(r"\[Private: (\w+)\]", key).group(1)
+    rounds = re.search(r"\[Sequences: ([\w|]*)\]", key).group(1).split("|")
+    if len(rounds) == 1:
+        return player, hand, rounds[0]
+    public = re.search(r"\[Public: (\w+)\]", key).group(1)
+    dealt = [c for c in (public[k:k + 2] for k in range(0, len(public), 2)) if c not in board]
+    assert len(rounds) == 2 and len(dealt) == 1, key
+    return player, hand, f"{rounds[0]}|{dealt[0]}|{rounds[1]}"
 
 
 def as_openspiel(solver: Solver, keys: dict) -> dict:
@@ -27,7 +37,7 @@ def as_openspiel(solver: Solver, keys: dict) -> dict:
     `keys` maps each OpenSpiel infostate to its legal action ids."""
     out = {}
     for key, legal in keys.items():
-        player, hand, seq = info(key)
+        player, hand, seq = info(key, solver.spot.board)
         node = solver.by_seq[seq]
         assert node.player == player
         avg = solver.average(node)
@@ -45,13 +55,18 @@ def cfr_plus_table(game: str, iterations: int = 0) -> dict:
 
 
 GAMES = ["mini", "c1", "mini_nl", "c1_nl", "c1_river"]
+TWO_STREETS = ["mini_turn", "mini_turn_nl"]
 
 
-@pytest.mark.parametrize("game", GAMES)
+@pytest.mark.parametrize("game", GAMES + TWO_STREETS)
 def test_same_infostates_as_openspiel(game):
+    """Every OpenSpiel infostate is one of our nodes with one of the hands that can be there (none
+    holds a card dealt by then), with the same actions, and every such pair is an infostate."""
     solver = Solver(SPOTS[game])
     table = cfr_plus_table(game)
-    assert len(table) == len(solver.nodes) * len(solver.hands)  # e.g. C1 no-limit: 12 x 210 = 2,520
+    pairs = {info(key, solver.spot.board)[1:] for key in table}
+    assert len(pairs) == len(table)
+    assert pairs == {(h, n.seq) for n in solver.nodes for h in solver.hands if not {h[:2], h[2:]} & set(n.dealt)}
     as_openspiel(solver, {k: [a for a, _ in v] for k, v in table.items()})  # same actions everywhere
 
 

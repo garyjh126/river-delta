@@ -55,15 +55,16 @@ from engine.ranges import weights
 
 @dataclass(frozen=True)
 class Spot:
-    """One betting round on a fixed board of three cards (a flop) or five (a river), where hands
-    are the best five of the board and two hole cards. Both players post `blind` and player 0 acts
-    first.
+    """Betting on a fixed board of three cards (a flop), four (a turn) or five (a river), over
+    `streets` betting rounds: each round after the first deals one more card to the board. Hands are
+    the best five of the final board and two hole cards. Both players post `blind`, and player 0 acts
+    first in every round.
 
-    Limit (`stack` unset): every bet or raise is `bet` chips, and at most `max_raises` are made.
-    No-limit (`stack` set): each player starts with `stack` chips and may bet or raise by each of
+    Limit (`stack` unset): every bet or raise is `bet` chips, and at most `max_raises` are made in
+    each round. No-limit (`stack` set): each player starts with `stack` chips and may bet by each of
     `pot_sizes` (fractions of the pot after calling, rounded to whole chips with halves rounded up)
-    while that stays below the stack, or go all-in. On a later street, `blind` is half the pot and
-    `stack` adds the chips behind.
+    and raise by each of `raise_sizes` (unset: the same as `pot_sizes`) while that stays below the
+    stack, or go all-in. On a later street, `blind` is half the pot and `stack` adds the chips behind.
 
     `ranges` holds each player's starting range as range text (engine/ranges.py), or is unset for
     every hand at weight 1.
@@ -78,7 +79,9 @@ class Spot:
     max_raises: int = 2
     stack: int | None = None
     pot_sizes: tuple[float, ...] = (1.0,)
+    raise_sizes: tuple[float, ...] | None = None
     ranges: tuple[str, str] | None = None
+    streets: int = 1
 
     @property
     def nolimit(self) -> bool:
@@ -89,25 +92,38 @@ class Spot:
         """The same game as an OpenSpiel `universal_poker` string, for cross-checks."""
         if self.ranges:
             raise ValueError("OpenSpiel's universal_poker deals every hand alike, so it has no ranges")
+
+        # One entry per round, and at least two: universal_poker reads a lone entry as a number and refuses it.
+        def per_round(entry) -> str:
+            return " ".join([str(entry)] * max(self.streets, 2))
+
+        later = " ".join(["1"] * (self.streets - 1)) or "0"  # one card for each round after the first
         cards = (f"numSuits={len(self.suits)},numRanks={len(self.ranks)},numHoleCards=2,"
-                 f"numBoardCards={len(self.board)} 0,boardCards={''.join(self.board)}")
-        common = f"numPlayers=2,numRounds=1,blind={self.blind} {self.blind},"
+                 f"numBoardCards={len(self.board)} {later},boardCards={''.join(self.board)}")
+        common = f"numPlayers=2,numRounds={self.streets},blind={self.blind} {self.blind},"
+        first = per_round(1)
         if not self.nolimit:
-            return (f"universal_poker(betting=limit,{common}raiseSize={self.bet} {self.bet},firstPlayer=1 1,"
-                    f"maxRaises={self.max_raises} {self.max_raises},{cards})")
-        if self.pot_sizes != (1.0,):
+            return (f"universal_poker(betting=limit,{common}raiseSize={per_round(self.bet)},firstPlayer={first},"
+                    f"maxRaises={per_round(self.max_raises)},{cards})")
+        if self.pot_sizes != (1.0,) or self.raise_sizes not in (None, (1.0,)):
             raise ValueError("OpenSpiel's no-limit games offer only pot-size bets and all-in")
-        return (f"universal_poker(betting=nolimit,{common}firstPlayer=1 1,{cards},"
+        return (f"universal_poker(betting=nolimit,{common}firstPlayer={first},{cards},"
                 f"stack={self.stack} {self.stack},bettingAbstraction=fcpa)")
 
 
 MINI = dict(ranks="2345", suits="cd", board=("3c", "4d", "5c"))
 C1 = dict(ranks="234567", suits="cdhs", board=("5c", "6d", "7h"))
+# Mini's ranks in three suits over two rounds: a fixed flop, then a turn card dealt. OpenSpiel stores
+# every deal and betting line, so this is about as big as a two-round game gets for checking against
+# it: about 2 s an iteration of its CFR+, against 90 s for a 20-card deck.
+MINI_TURN = dict(ranks="2345", suits="cdh", board=("3c", "4d", "5h"), streets=2)
 SPOTS = {
     "mini": Spot(**MINI, iterations=5000),
     "c1": Spot(**C1, iterations=1000),
     "mini_nl": Spot(**MINI, iterations=5000, stack=20),
     "c1_nl": Spot(**C1, iterations=1000, stack=20),
+    "mini_turn": Spot(**MINI_TURN, iterations=1000),
+    "mini_turn_nl": Spot(**MINI_TURN, iterations=1000, stack=20),
     # C1's deck on a river where hands run from two pair through straights and flushes to four of a kind.
     "c1_river": Spot(ranks="234567", suits="cdhs", board=("2c", "4c", "5d", "7c", "7h"), iterations=1000),
     # A full-deck river, to change at will. The big blind (player 0) against the button in a
@@ -127,22 +143,40 @@ SPOTS = {
 }
 
 
+# The betting so far (`seq`) is written as OpenSpiel writes it, f, c, r or r<chips raised to>, with
+# each round after the first behind the card dealt for it: "rc|3h|r" is a bet and a call, the 3h,
+# and a bet. `dealt` holds the cards dealt so far after the fixed board.
+
+
 @dataclass
 class Terminal:
     folder: int | None  # the player who folded, or None for a showdown
     contrib: tuple[int, int]
+    dealt: tuple[str, ...] = ()
+
+
+@dataclass
+class Chance:
+    """The end of a round's betting before the last: the next card is dealt, one child per card."""
+    seq: str
+    contrib: tuple[int, int]
+    dealt: tuple[str, ...]
+    cards: list[str]  # the cards it can deal, in deck order
+    children: list  # Node, Chance or Terminal, one per card
 
 
 @dataclass
 class Node:
-    seq: str  # the betting so far, written as OpenSpiel writes it: f, c, r or r<chips raised to>
+    seq: str
     player: int
     contrib: tuple[int, int]
     actions: list[str]  # fold, check, call, bet, raise, allin
-    children: list  # Node or Terminal, one per action
+    children: list  # Node, Chance or Terminal, one per action
+    dealt: tuple[str, ...] = ()
 
 
-def build_tree(spot: Spot, seq: str = "", player: int = 0, contrib: tuple[int, int] | None = None) -> Node:
+def build_tree(spot: Spot, seq: str = "", player: int = 0, contrib: tuple[int, int] | None = None,
+               dealt: tuple[str, ...] = ()) -> Node:
     contrib = contrib or (spot.blind, spot.blind)
     opp = 1 - player
     facing = contrib[opp] > contrib[player]
@@ -152,35 +186,53 @@ def build_tree(spot: Spot, seq: str = "", player: int = 0, contrib: tuple[int, i
         new = list(contrib)
         new[player] = to
         actions.append(kind)
-        children.append(build_tree(spot, seq + (f"r{to}" if spot.nolimit else "r"), opp, tuple(new)))
+        children.append(build_tree(spot, seq + (f"r{to}" if spot.nolimit else "r"), opp, tuple(new), dealt))
 
     if facing:
         actions += ["fold", "call"]
-        children += [Terminal(player, contrib), Terminal(None, (contrib[opp], contrib[opp]))]
+        children += [Terminal(player, contrib, dealt), end_of_round(spot, seq + "c", (contrib[opp],) * 2, dealt)]
     else:
         actions.append("check")
-        children.append(Terminal(None, contrib) if seq.endswith("c") else build_tree(spot, seq + "c", opp, contrib))
+        children.append(end_of_round(spot, seq + "c", contrib, dealt) if seq.endswith("c")
+                        else build_tree(spot, seq + "c", opp, contrib, dealt))
     kind = "raise" if facing else "bet"
     if not spot.nolimit:
-        if seq.count("r") < spot.max_raises:
+        if seq.split("|")[-1].count("r") < spot.max_raises:
             raise_to(contrib[opp] + spot.bet, kind)
     else:
-        for size in spot.pot_sizes:
+        for size in spot.raise_sizes if facing and spot.raise_sizes is not None else spot.pot_sizes:
             # Halves round up, as noambrown/poker_solver rounds them, so both build the same tree.
             to = contrib[opp] + math.floor(size * 2 * contrib[opp] + 0.5)
             if to < spot.stack:
                 raise_to(to, kind)
         if contrib[opp] < spot.stack:
             raise_to(spot.stack, "allin")
-    return Node(seq, player, contrib, actions, children)
+    return Node(seq, player, contrib, actions, children, dealt)
+
+
+def end_of_round(spot: Spot, seq: str, contrib: tuple[int, int], dealt: tuple[str, ...]):
+    """Where a round's betting ends without a fold: the showdown after the last round, or else the
+    next card, then the next round's betting, or straight to the next card if both are all-in."""
+    if len(dealt) + 1 == spot.streets:
+        return Terminal(None, contrib, dealt)
+    cards = [c for c in deck(spot) if c not in dealt]
+    allin = spot.nolimit and contrib[0] == spot.stack
+    return Chance(seq, contrib, dealt, cards, [
+        end_of_round(spot, f"{seq}|{c}|", contrib, dealt + (c,)) if allin
+        else build_tree(spot, f"{seq}|{c}|", 0, contrib, dealt + (c,)) for c in cards])
+
+
+def deck(spot: Spot) -> list[str]:
+    """The cards not on the board, ordered by rank, then suit in the order of `spot.suits`, highest
+    first."""
+    index = {r + s: i * len(spot.suits) + j for i, r in enumerate(spot.ranks) for j, s in enumerate(spot.suits)}
+    return sorted((c for c in index if c not in spot.board), key=index.get, reverse=True)
 
 
 def deal_hands(spot: Spot) -> list[str]:
     """Every two-card hand left once the board is out, written like OpenSpiel's private cards
-    (higher card first, cards ordered by rank, then suit in the order of `spot.suits`)."""
-    index = {r + s: i * len(spot.suits) + j for i, r in enumerate(spot.ranks) for j, s in enumerate(spot.suits)}
-    deck = sorted((c for c in index if c not in spot.board), key=index.get, reverse=True)
-    return [a + b for a, b in itertools.combinations(deck, 2)]
+    (higher card first, in deck order)."""
+    return [a + b for a, b in itertools.combinations(deck(spot), 2)]
 
 
 class Solver:
@@ -221,8 +273,9 @@ class Solver:
         stack = [self.root]
         while stack:
             node = stack.pop()
-            self.nodes.append(node)
-            stack += [c for c in reversed(node.children) if isinstance(c, Node)]
+            if isinstance(node, Node):
+                self.nodes.append(node)
+            stack += [c for c in reversed(node.children) if not isinstance(c, Terminal)]
         self.by_seq = {node.seq: node for node in self.nodes}
         self.regret = {node.seq: np.zeros((len(node.actions), n)) for node in self.nodes}
         self.strategy_sum = {node.seq: np.zeros((len(node.actions), n)) for node in self.nodes}
