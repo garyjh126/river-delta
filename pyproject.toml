@@ -1,5 +1,5 @@
 [project]
-name = "riverdelta"
+name = "river-delta"
 version = "0.0.0"
 description = "Heads-up poker solver."
 license = "MIT"

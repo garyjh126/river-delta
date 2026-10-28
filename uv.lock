@@ -250,7 +250,7 @@ wheels = [
 ]
 
 [[package]]
-name = "riverdelta"
+name = "river-delta"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
