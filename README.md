@@ -123,7 +123,7 @@ for the EVs and the export. `scripts/check_river.py` checks the spot against noa
 our best response puts its strategy's exploitability where its own does, which checks our hand
 ranking, card removal, ranges, payoffs and best response against an outside implementation. Bet
 sizes round halves up, as poker_solver rounds them, so that the trees match. From the script, 1,000
-iterations of discounted CFR each, on one thread:
+iterations of discounted CFR each:
 
 | | poker_solver | ours |
 |---|---:|---:|
@@ -131,11 +131,9 @@ iterations of discounted CFR each, on one thread:
 | exploitability by our best response (chips) | 0.001742 | 0.002001 |
 | the same, % of the pot | 0.0087% | 0.0100% |
 | value to the big blind (chips) | -0.704113 | -0.704279 |
-| seconds | 1.36 | 2.26 |
 
-poker_solver's time includes reading the spot and building its tree, and it is built with
-`-ffast-math -march=native`. Its discounted CFR discounts before each update rather than after, so
-the two runs differ even in exact arithmetic.
+poker_solver's discounted CFR discounts before each update rather than after, so the two runs differ
+even in exact arithmetic.
 
 ## The viewer
 
