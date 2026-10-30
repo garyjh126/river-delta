@@ -6,7 +6,8 @@
 Every game arrives as one shape: a tree of decision nodes, each with its actions and, per
 action, the probability for every combo. Writes build/viewer.html (open it in a browser) and
 build/viewer.artifact.html (the same page without the document wrapper, for publishing as a
-claude.ai artifact).
+claude.ai artifact). With --public, writes build/public/index.html instead: the solved games only,
+without the mock one, for the project's GitHub Pages site.
 """
 
 import json
@@ -117,16 +118,22 @@ games = {
     "c1": solved_game("c1", "C1 · 24 cards", "24-card deck", "43s"),
     "c1_nl": solved_game("c1_nl", "C1 no-limit", "24-card deck", "43s"),
     "river": solved_game("river", "River · 52 cards", "52-card deck", "KJo"),
-    "holdem": mock_game(),
 }
+public = "--public" in sys.argv[1:]
+if not public:
+    games["holdem"] = mock_game()
 data = {"order": list(games), "games": games}
 page = (root / "viewer" / "template.html").read_text().replace("/*DATA*/null", json.dumps(data, separators=(",", ":")))
-(root / "build" / "viewer.artifact.html").write_text(page)
-(root / "build" / "viewer.html").write_text(
-    '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-    '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
-    f"</head><body style=\"margin:0\">{page}</body></html>"
-)
+document = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
+            f"</head><body style=\"margin:0\">{page}</body></html>")
+if public:
+    out = root / "build" / "public" / "index.html"
+    out.parent.mkdir(exist_ok=True)
+else:
+    out = root / "build" / "viewer.html"
+    (root / "build" / "viewer.artifact.html").write_text(page)
+out.write_text(document)
 for key, g in games.items():
     print(f"{key}: {len(g['hands'])} combos, {len(g['nodes'])} decision nodes, {g['source'] or 'mock'}", file=sys.stderr)
-print(f"{root / 'build' / 'viewer.html'} ({len(page) / 1e6:.2f} MB)", file=sys.stderr)
+print(f"{out} ({len(page) / 1e6:.2f} MB)", file=sys.stderr)

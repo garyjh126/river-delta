@@ -5,6 +5,8 @@ engine in Python as its answer key, and a viewer for the strategies they find. I
 a fixed board (a flop, a turn or a river) to the end of the hand, from each player's range, with the
 bet and raise sizes you give it, by discounted CFR or CFR+.
 
+![The viewer on the full-deck river spot: the button's strategy after the big blind checks, a grid of hands coloured by how often each checks or bets each size, beside the table and the button's whole range](docs/images/viewer-strategy.png)
+
 What it does so far:
 
 * **A full-deck turn**: K♠8♦4♣2♥, with bets of a third, three quarters and one and a half pots,
@@ -193,6 +195,11 @@ of the 8 bb pot):
 | 500 | 272 | 0.14% |
 | 1,000 | 548 | 0.034% |
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/turn-convergence-dark.png">
+  <img alt="The turn spot's exploitability against seconds on one thread, on a log scale: 1.94% of the pot after 52 s, 0.24% after 300 iterations (162 s), 0.034% after 1,000 iterations (548 s)" src="docs/images/turn-convergence-light.png">
+</picture>
+
 ## The viewer
 
 The viewer covers five games, each on a fixed board with two hole cards per player:
@@ -217,11 +224,14 @@ walk over every deal weighted by them. **The Hold'em numbers are mock data** fro
 hand-strength heuristic (`viewer/mock_holdem.py`), there only to judge the layout at full size;
 the page labels them as mock.
 
+![The viewer's EV tab on the same decision: each hand's expected value in chips, shaded from 0 to the highest, with the selected hand's EV for every action](docs/images/viewer-ev.png)
+
 ```bash
 uv run python engine/cfr.py mini c1 c1_nl       # ~8 s   -> build/<game>.engine.json
 uv run python engine/cfr.py river --engine c++  # ~3 s   -> build/river.engine.json
 uv run python viewer/mock_holdem.py             # ~1 s   -> build/holdem.json (mock)
 uv run python viewer/build.py                   # -> build/viewer.html, open it in a browser
+uv run python viewer/build.py --public          # -> build/public/index.html: the solved games only, no mock
 ```
 
 OpenSpiel's own solves, kept for comparison, come from `scripts/solve_reference.py mini` (~10 s)
