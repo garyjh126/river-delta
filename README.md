@@ -7,6 +7,8 @@ bet and raise sizes you give it, by discounted CFR or CFR+.
 
 ![The viewer on the full-deck river spot: the button's strategy after the big blind checks, a grid of hands coloured by how often each checks or bets each size, beside the table and the button's whole range](docs/images/viewer-strategy.png)
 
+**[Try the viewer in your browser](https://garyjh126.github.io/river-delta/)**: the solved games, nothing to install.
+
 What it does so far:
 
 * **A full-deck turn**: K♠8♦4♣2♥, with bets of a third, three quarters and one and a half pots,
