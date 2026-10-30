@@ -1,8 +1,26 @@
 # river-delta
 
-A heads-up poker solver, at its very start. What's here is the first slice of the engine and the
-strategy viewer it feeds: a page that walks a game's betting tree and shows how often each hand
-takes each action at every decision, and what each hand and action is worth there.
+A heads-up poker solver for Hold'em after the flop, at an early stage: an engine in C++, the same
+engine in Python as its answer key, and a viewer for the strategies they find. It solves a spot from
+a fixed board (a flop, a turn or a river) to the end of the hand, from each player's range, with the
+bet and raise sizes you give it, by discounted CFR or CFR+.
+
+What it does so far:
+
+* **A full-deck turn**: K♠8♦4♣2♥, with bets of a third, three quarters and one and a half pots,
+  raises of three quarters and all-in on both streets (14,052 decision nodes, 1,128 hands). 0.24% of
+  the pot in 300 iterations: 162 s on one thread, 0.70 GB.
+* **A full-deck river**: K♠8♦4♣2♥7♠, with bets and raises of a third, three quarters and one and a
+  half pots, and all-in (60 decision nodes, 1,081 hands). 0.01% of the pot in 1,000 iterations:
+  about 2 s on one thread.
+* **Checked against independent code.** The small games against OpenSpiel: the same infostates,
+  showdowns, iterates and exploitability. The river against noambrown/poker_solver: the same tree,
+  and its strategy's exploitability the same by our best response as by its own. The C++ engine
+  against the Python one, bit for bit.
+* **The viewer**: a page that walks a game's betting tree and shows how often each hand takes each
+  action at every decision, and what each hand and action is worth there.
+
+Not yet: threads, a full-deck flop solve or a GPU (CUDA) engine. They come next.
 
 ## The engine
 
