@@ -122,7 +122,7 @@ games = {
 public = "--public" in sys.argv[1:]
 if not public:
     games["holdem"] = mock_game()
-data = {"order": list(games), "games": games}
+data = {"order": list(games), "start": "river", "games": games}
 page = (root / "viewer" / "template.html").read_text().replace("/*DATA*/null", json.dumps(data, separators=(",", ":")))
 document = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
